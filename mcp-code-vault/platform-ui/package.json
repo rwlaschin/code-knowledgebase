@@ -1,0 +1,28 @@
+{
+  "name": "platform-ui",
+  "private": true,
+  "scripts": {
+    "build": "npx nuxt build",
+    "dev": "npx nuxt dev",
+    "preview": "npx nuxt preview",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@vueuse/motion": "^3.0.3",
+    "apexcharts": "^5.4.0",
+    "nuxt": "^3.15.0",
+    "nuxt-icon": "^1.0.0-beta.7",
+    "vue": "latest",
+    "vue3-apexcharts": "^1.10.0"
+  },
+  "devDependencies": {
+    "@nuxtjs/tailwindcss": "^6.14.0",
+    "@vitejs/plugin-vue": "^6.0.4",
+    "@vitest/coverage-v8": "^2.1.0",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.6.1",
+    "typescript": "latest",
+    "vitest": "^2.1.0"
+  }
+}
