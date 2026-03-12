@@ -26,7 +26,7 @@
     "source-map-js": "1.2.1",
     "supports-color": "10.2.2",
     "ufo": "1.6.3",
-    "unhead": "2.1.4",
+    "unhead": "2.1.11",
     "vue": "3.5.28",
     "vue-bundle-renderer": "2.2.0",
     "vue-router": "4.6.4"
