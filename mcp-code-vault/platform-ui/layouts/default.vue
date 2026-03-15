@@ -35,6 +35,14 @@
           Config
         </NuxtLink>
         <NuxtLink
+          to="/scan"
+          class="rounded-card px-3 py-2.5 flex items-center gap-3 text-gray-400 hover:bg-white/5 hover:text-gray-200 transition-colors"
+          active-class="!bg-[#1A1726] !text-white"
+        >
+          <span class="w-5 h-5 flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg></span>
+          Scan
+        </NuxtLink>
+        <NuxtLink
           to="/docs"
           class="rounded-card px-3 py-2.5 flex items-center gap-3 text-gray-400 hover:bg-white/5 hover:text-gray-200 transition-colors"
           active-class="!bg-[#1A1726] !text-white"
@@ -65,17 +73,35 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
 const docSections = [
   { id: 'quick-start', label: 'Quick start' },
-  { id: 'setting-up-mcp-cursor', label: 'Setting up MCP with Cursor' },
-  { id: 'user-interface', label: 'User interface' }
+  { id: 'setting-up-mcp-cursor', label: 'Setting up the MCP server in Cursor' },
+  { id: 'using-the-mcp', label: 'MCP tools reference' },
+  { id: 'tool-ping', label: 'ping' },
+  { id: 'tool-config', label: 'config' },
+  { id: 'user-interface', label: 'Platform UI' },
+  { id: 'configuration', label: 'Configuration' }
 ]
 const validDocIds = new Set(docSections.map((s) => s.id))
+
+// Redirect invalid hash on /docs so URL always has a valid section (avoids null refs and broken state)
+watch(
+  () => (route.path === '/docs' ? route.hash : ''),
+  (hash) => {
+    if (route.path !== '/docs') return
+    const value = hash ? hash.replace(/^#/, '').trim() : ''
+    if (value && !validDocIds.has(value)) {
+      router.replace({ path: '/docs', hash: '#quick-start' })
+    }
+  },
+  { immediate: true }
+)
+
 const docsActiveSectionId = computed(() => {
   if (route.path !== '/docs') return null
   const hash = route.hash ? route.hash.replace(/^#/, '') : ''
@@ -84,8 +110,10 @@ const docsActiveSectionId = computed(() => {
 
 function scrollToDocSection(id: string) {
   router.replace({ path: '/docs', hash: `#${id}` })
-  const el = document.getElementById(id)
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  nextTick(() => {
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
 }
 
 // Background spotlight that follows cursor (--mouse-x, --mouse-y from mouse-tracking plugin).

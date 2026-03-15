@@ -3,17 +3,21 @@
   "version": "0.1.0",
   "main": "dist/index.js",
   "scripts": {
+    "seed": "tsx src/db/seed-run.ts",
     "build": "npm run test:integration && tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/run.ts",
     "dev:ui": "cd platform-ui && npm run dev",
-    "test": "npm run test:unit:coverage && npm run test:platform-ui",
-    "test:platform-ui": "cd platform-ui && npm run test:coverage",
-    "test:integration": "jest --testPathPatterns=integration --testTimeout=30000 --verbose",
-    "test:unit:coverage": "tsc --noEmit && jest --testPathIgnorePatterns=integration --testTimeout=1000 --verbose --runInBand --coverage"
+    "tsc": "tsc --noEmit",
+    "tsc:watch": "tsc --noEmit --watch",
+    "test:platform-ui": "cd platform-ui && npm run test:unit",
+    "test:unit": "tsc --noEmit && jest --testPathIgnorePatterns=integration --testPathIgnorePatterns=coverage --testTimeout=1000 --verbose --runInBand --coverage",
+    "test:unit:watch": "jest --testPathIgnorePatterns=integration --testPathIgnorePatterns=coverage --testTimeout=1000 --verbose --runInBand --coverage --watch",
+    "test:integration": "jest --testPathPatterns=integration --testPathIgnorePatterns=node_modules --testTimeout=30000 --verbose"
   },
   "dependencies": {
     "@fastify/compress": "^8.3.1",
+    "@fastify/cors": "^10.1.0",
     "@fastify/static": "^9.0.0",
     "@langchain/google-genai": "^2.1.13",
     "@modelcontextprotocol/sdk": "latest",
@@ -28,11 +32,13 @@
     "mongoose": "^9.2.1",
     "node-fetch": "^2.7.0",
     "p-limit": "latest",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "socket.io": "^4.8.0"
   },
   "devDependencies": {
     "@types/dotenv": "latest",
     "@types/jest": "^30.0.0",
+    "socket.io-client": "^4.8.0",
     "@types/mongodb": "latest",
     "@types/node-fetch": "^2.6.13",
     "jest": "latest",

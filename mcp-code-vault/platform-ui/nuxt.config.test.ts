@@ -10,7 +10,7 @@ describe('nuxt.config', () => {
     const config = mod.default;
     expect(config).toBeDefined();
     expect(config.devServer).toBeDefined();
-    expect(config.devServer.port).toBe(3001);
+    expect(config.devServer.port).toBe(2999);
     expect(config.nitro).toBeDefined();
     expect(config.nitro.devProxy).toBeDefined();
     expect(config.nitro.devProxy['/metrics/stream']).toMatch(/localhost|127\.0\.0\.1/);

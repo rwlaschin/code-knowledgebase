@@ -1,0 +1,7 @@
+[
+  {
+    "name": "gemini-1.5-pro",
+    "provider": "google",
+    "label": "Gemini 1.5 Pro"
+  }
+]

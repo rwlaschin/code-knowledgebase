@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Code Reviewer",
+    "description": "Reviews code for quality, style, and maintainability.",
+    "system_prompt": "You are a code reviewer. Focus on clarity, conventions, and actionable feedback.",
+    "focus": "code_review",
+    "project_key": "default",
+    "model_names": ["gemini-1.5-pro"],
+    "persona_names": ["Senior Code Reviewer"],
+    "tools": {
+      "file_watch": true,
+      "db_read_write": false,
+      "web_search": false,
+      "run_shell": false
+    }
+  },
+  {
+    "name": "Architect",
+    "description": "Analyzes and improves system structure and boundaries.",
+    "system_prompt": "You are a system architect. Focus on structure, boundaries, and design trade-offs.",
+    "focus": "architecture",
+    "project_key": "default",
+    "model_names": ["gemini-1.5-pro"],
+    "persona_names": ["System Architect"],
+    "tools": {
+      "file_watch": true,
+      "db_read_write": false,
+      "web_search": false,
+      "run_shell": false
+    }
+  },
+  {
+    "name": "Security",
+    "description": "Identifies security risks and suggests mitigations.",
+    "system_prompt": "You are a security analyst. Focus on vulnerabilities, data handling, and secure defaults.",
+    "focus": "security",
+    "project_key": "default",
+    "model_names": ["gemini-1.5-pro"],
+    "persona_names": ["Security Analyst"],
+    "tools": {
+      "file_watch": true,
+      "db_read_write": false,
+      "web_search": false,
+      "run_shell": false
+    }
+  }
+]

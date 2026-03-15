@@ -1,6 +1,6 @@
 [
   {
-    "root_path": "./", // Path to your codebase root
+    "root_path": "./",
     "name": "DefaultProject"
   }
 ]

@@ -8,7 +8,10 @@ jest.mock('os', () => ({
 jest.mock('../src/stats/server', () => ({ createStatsServer: jest.fn() }));
 jest.mock('../src/mcp/server', () => ({ createMcpServer: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/logger', () => ({ logger: { info: jest.fn(), fatal: jest.fn() } }));
-
+jest.mock('../src/discoveryClient', () => ({
+  startDiscoveryClient: jest.fn(),
+  stopDiscoveryClient: jest.fn()
+}));
 const createStatsServer = require('../src/stats/server').createStatsServer;
 const createMcpServer = require('../src/mcp/server').createMcpServer;
 const { logger } = require('../src/logger');
@@ -32,26 +35,31 @@ describe('index', () => {
   });
 
   describe('main', () => {
-    it('throws when PORT is missing (fail-fast)', async () => {
-      const orig = process.env.PORT;
-      delete process.env.PORT;
+    it('throws when PORT is invalid (e.g. negative)', async () => {
+      const origPort = process.env.PORT;
+      process.env.PORT = '-1';
       try {
-        await expect(main()).rejects.toThrow('PORT is required');
+        await expect(main()).rejects.toThrow('PORT must be a non-negative integer');
       } finally {
-        process.env.PORT = orig;
+        if (origPort !== undefined) process.env.PORT = origPort;
+        else delete process.env.PORT;
       }
     });
 
-    it('creates stats server, listens on port from env, logs, then creates MCP server', async () => {
+    it('sets context, creates MCP server, then stats server and listens', async () => {
       const mockListen = jest.fn().mockResolvedValue(undefined);
-      createStatsServer.mockResolvedValue({ listen: mockListen });
+      createStatsServer.mockResolvedValue({ server: {}, listen: mockListen });
 
       const origPort = process.env.PORT;
+      const origMongo = process.env.MONGO_URL;
       process.env.PORT = '3999';
+      process.env.MONGO_URL = 'mongodb://localhost:27017/test'; // so stats server is started (not MCP-only skip)
       try {
         await main();
       } finally {
         process.env.PORT = origPort;
+        if (origMongo !== undefined) process.env.MONGO_URL = origMongo;
+        else delete process.env.MONGO_URL;
       }
 
       expect(createStatsServer).toHaveBeenCalled();

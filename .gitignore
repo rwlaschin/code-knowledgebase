@@ -19,6 +19,7 @@ pids
 lib-cov
 
 # Coverage directory used by tools like istanbul
+coverage/
 coverage
 *.lcov
 
@@ -74,9 +75,11 @@ typings/
 
 # nuxt.js build output
 .nuxt
+.output
 
 # vuepress build output
 .vuepress/dist
+dist/
 
 # Serverless directories
 .serverless/

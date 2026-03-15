@@ -1,5 +1,5 @@
 /**
- * ES2022 syntax is a REQUIREMENT (see REQUIREMENTS.md).
+ * ES2022 syntax is a requirement.
  * Tests use ??, ?., ! and guard that src does not regress to || for defaults or omit ?. for optional access.
  */
 import * as fs from 'fs';

@@ -1,53 +1,184 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { mount, flushPromises } from '@vue/test-utils';
 import Index from './index.vue';
+import GlassCard from '../components/GlassCard.vue';
+import { MOCK_STATS_URL } from '../testConstants';
 
-const handlers: { onopen?: () => void; onmessage?: (e: { data: string }) => void; onerror?: () => void } = {};
-const mockEventSource = {
-  addEventListener: vi.fn(),
-  close: vi.fn(),
-  get onopen() { return handlers.onopen; },
-  set onopen(fn) { handlers.onopen = fn; },
-  get onmessage() { return handlers.onmessage; },
-  set onmessage(fn) { handlers.onmessage = fn; },
-  get onerror() { return handlers.onerror; },
-  set onerror(fn) { handlers.onerror = fn; }
+const mockSocketHandlers: Record<string, (...args: unknown[]) => void> = {};
+const mockSocket = {
+  on: vi.fn((event: string, fn: (...args: unknown[]) => void) => {
+    mockSocketHandlers[event] = fn;
+    return mockSocket;
+  }),
+  disconnect: vi.fn()
 };
-vi.stubGlobal('EventSource', vi.fn(() => mockEventSource));
+const mockIo = vi.fn(() => mockSocket);
+
+const mockRuntimeConfig = vi.fn(() => ({
+  public: { statsBaseUrl: MOCK_STATS_URL }
+}));
+vi.mock('nuxt/app', () => ({
+  useRuntimeConfig: () => mockRuntimeConfig()
+}));
+
+vi.mock('socket.io-client', () => ({
+  io: (...args: unknown[]) => mockIo(...args)
+}));
+
+beforeEach(() => {
+  globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response));
+});
 
 describe('Index page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    handlers.onopen = undefined;
-    handlers.onmessage = undefined;
-    handlers.onerror = undefined;
+    Object.keys(mockSocketHandlers).forEach((k) => delete mockSocketHandlers[k]);
+    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response));
   });
 
-  it('renders and sets up EventSource on mount', async () => {
+  it('renders and sets up Socket.IO on mount', async () => {
     const wrapper = mount(Index, {
-      global: { stubs: { ClientOnly: { template: '<div><slot /></div>' }, apexchart: true } }
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
     });
+    await flushPromises();
     expect(wrapper.text()).toContain('Stats');
     expect(wrapper.text()).toContain('Time series');
-    expect(EventSource).toHaveBeenCalledWith('/metrics/stream');
+    expect(mockIo).toHaveBeenCalledWith(MOCK_STATS_URL, expect.objectContaining({ autoConnect: true, reconnection: true }));
   });
 
-  it('updates streamStatus and lastStreamEvent when EventSource fires', async () => {
-    const wrapper = mount(Index, {
-      global: { stubs: { ClientOnly: { template: '<div><slot /></div>' }, apexchart: true } }
+  it('uses NUXT_PUBLIC_UI_PORT (port only) as backend URL for Socket.IO', async () => {
+    mockRuntimeConfig.mockReturnValueOnce({
+      public: { statsBaseUrl: '3100' }
     });
+    const wrapper = mount(Index, {
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
+    });
+    await flushPromises();
+    expect(mockIo).toHaveBeenCalledWith(
+      expect.stringMatching(/^http:\/\/.+:3100$/),
+      expect.objectContaining({ autoConnect: true, reconnection: true })
+    );
+  });
+
+  it('updates streamStatus and lastStreamEvent when socket fires connected and heartbeat', async () => {
+    const wrapper = mount(Index, {
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
+    });
+    await flushPromises();
+    const connectedCb = mockSocketHandlers['connected'];
+    const heartbeatCb = mockSocketHandlers['heartbeat'];
+    const disconnectCb = mockSocketHandlers['disconnect'];
+    expect(connectedCb).toBeDefined();
+    expect(heartbeatCb).toBeDefined();
+    expect(disconnectCb).toBeDefined();
+
+    connectedCb!('{"ts":"2025-01-01T00:00:00.000Z"}');
     await wrapper.vm.$nextTick();
-    expect(handlers.onopen).toBeDefined();
-    expect(handlers.onmessage).toBeDefined();
-    expect(handlers.onerror).toBeDefined();
-    handlers.onopen!();
+    heartbeatCb!('{"ts":"2025-01-01T00:00:00.000Z"}');
     await wrapper.vm.$nextTick();
     expect(wrapper.text()).toContain('Connected');
-    handlers.onmessage!({ data: '{"event":"heartbeat"}' });
+
+    disconnectCb!();
     await wrapper.vm.$nextTick();
-    expect(wrapper.text()).toContain('{"event":"heartbeat"}');
-    handlers.onerror!();
+    expect(wrapper.text()).toContain('Live stream not connected');
+  });
+
+  it('shows "—" for Files processed and Files updated when no scan data', async () => {
+    const wrapper = mount(Index, {
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain('Files processed');
+    expect(wrapper.text()).toContain('Files updated');
+    expect(wrapper.text()).toMatch(/—/);
+  });
+
+  it('updates Files processed and Files updated when socket receives scan:progress', async () => {
+    const wrapper = mount(Index, {
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
+    });
+    await flushPromises();
+    const progressCb = mockSocketHandlers['scan:progress'];
+    expect(progressCb).toBeDefined();
+    progressCb!(JSON.stringify({ filesProcessed: 42, filesUpdated: 10 }));
     await wrapper.vm.$nextTick();
-    expect(wrapper.text()).toContain('Backend not connected');
+    expect(wrapper.text()).toContain('42');
+    expect(wrapper.text()).toContain('10');
+  });
+
+  it('shows connection title with last update when connected and heartbeat received', async () => {
+    const wrapper = mount(Index, {
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
+    });
+    await flushPromises();
+    const connectedCb = mockSocketHandlers['connected'];
+    const heartbeatCb = mockSocketHandlers['heartbeat'];
+    connectedCb!('{"ts":"2025-01-01T12:00:00.000Z"}');
+    await wrapper.vm.$nextTick();
+    heartbeatCb!('{"ts":"2025-01-01T12:00:00.000Z"}');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toContain('Connected');
+  });
+
+  it('updates stats from stream when metric event has duration and metadata', async () => {
+    const wrapper = mount(Index, {
+      global: {
+        components: { GlassCard },
+        stubs: {
+          ClientOnly: { template: '<div><slot /></div>' },
+          apexchart: true
+        }
+      }
+    });
+    await flushPromises();
+    const metricCb = mockSocketHandlers['metric'];
+    expect(metricCb).toBeDefined();
+    metricCb!(JSON.stringify({
+      instance_id: 'i1',
+      operation: 'query',
+      started_at: '2025-01-01T00:00:00.000Z',
+      ended_at: '2025-01-01T00:00:01.000Z',
+      duration_ms: 100,
+      status: 'ok',
+      metadata: { tokens_in: 50, tokens_out: 20 }
+    }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toMatch(/\d+/);
   });
 });

@@ -1,10 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
 import Docs from './docs.vue';
+import { MOCK_STATS_PORT } from '../testConstants';
 
 const mockCwd = '/absolute/project/root';
-const mockPort = '3000';
+const mockPort = String(MOCK_STATS_PORT);
+
+const mockUseRoute = vi.fn();
+const mockUseRouter = vi.fn();
+
+vi.mock('vue-router', () => ({
+  useRoute: () => mockUseRoute(),
+  useRouter: () => mockUseRouter()
+}));
 
 vi.mock('nuxt/app', () => ({
   useState: (_key: string, init?: () => string | null) => ({ value: init ? init() : null })
@@ -33,6 +42,11 @@ async function mountDocs() {
 }
 
 describe('Docs page', () => {
+  beforeEach(() => {
+    mockUseRoute.mockReturnValue({ path: '/docs', hash: '' });
+    mockUseRouter.mockReturnValue({ replace: vi.fn(), push: vi.fn() });
+  });
+
   it('renders Docs title and search header', async () => {
     const wrapper = await mountDocs();
     expect(wrapper.text()).toContain('Docs');
@@ -52,12 +66,12 @@ describe('Docs page', () => {
     expect(wrapper.find('#user-interface').exists()).toBe(true);
   });
 
-  it('renders doc content: Quick start, Setting up MCP, User interface', async () => {
+  it('renders doc content: Quick start, Setting up MCP, Platform UI', async () => {
     const wrapper = await mountDocs();
     const text = wrapper.text();
     expect(text).toContain('Quick start');
-    expect(text).toContain('Setting up MCP with Cursor');
-    expect(text).toContain('User interface');
+    expect(text).toContain('Setting up the MCP server in Cursor');
+    expect(text).toContain('Platform UI');
     expect(text).toContain('mcpServers');
     expect(text).toContain('pong');
   });
@@ -88,10 +102,27 @@ describe('Docs page', () => {
             "command": "node",
             "args": ["dist/index.js"],
             "cwd": "<project-root>",
-            "env": { "PORT": "3000" }
+            "env": {
+              "PORT": "3000",
+              "MCP_PROJECT_NAME": "my-project"
+            }
           }
         }
       }"
     `);
+  });
+
+  it('Copy button calls copySnippet and updates label', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(global.navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.useFakeTimers();
+    const wrapper = await mountDocs();
+    const copyBtn = wrapper.findAll('button').find((b) => b.text().includes('Copy'))!;
+    await copyBtn.trigger('click');
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('mcpServers'));
+    expect(wrapper.text()).toContain('Copied!');
+    await vi.advanceTimersByTime(2000);
+    expect(wrapper.text()).toContain('Copy');
+    vi.useRealTimers();
   });
 });

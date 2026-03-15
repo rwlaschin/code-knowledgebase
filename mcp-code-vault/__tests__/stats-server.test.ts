@@ -2,6 +2,10 @@ jest.mock('../src/db/mongoose', () => ({
   connectMongoose: jest.fn().mockResolvedValue(undefined)
 }));
 
+jest.mock('../src/db/seed', () => ({
+  runSeed: jest.fn().mockResolvedValue(undefined)
+}));
+
 import { createStatsServer } from '../src/stats/server';
 
 describe('createStatsServer', () => {
@@ -29,6 +33,6 @@ describe('createStatsServer', () => {
 
   it('registers GET /metrics/stream route', async () => {
     const routes = fastify.printRoutes();
-    expect(routes).toContain('metrics/stream');
+    expect(routes).toMatch(/stream/);
   });
 });

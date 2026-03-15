@@ -20,7 +20,7 @@ A local-first Model Context Protocol (MCP) server that indexes local codebases i
 2. Set `PORT` in `.env` (e.g. `PORT=3000`)
 3. Build and run: `npm run build` then `npm start`
 
-See the **Docs** page in the platform UI for how to add the MCP in Cursor and view the dashboard.
+See the **Docs** page in the platform UI for setup, MCP in Cursor, configuration (projects, models, personas, agents), and running the Platform UI.
 
 ## Scripts
 - `build`: Compile TypeScript

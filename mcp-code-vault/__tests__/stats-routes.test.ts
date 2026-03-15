@@ -42,7 +42,8 @@ describe('Stats routes', () => {
 
   describe('GET /metrics/stream', () => {
     it('stream yields connected event first', async () => {
-      const gen = (await import('../src/stats/routes/stream')).metricsStreamEvents();
+      const { streamToUI } = await import('../src/stats/streamChannel');
+      const gen = streamToUI();
       const first = await gen.next();
       expect(first.done).toBe(false);
       expect(first.value?.event).toBe('connected');
@@ -52,18 +53,49 @@ describe('Stats routes', () => {
       expect(typeof data.ts).toBe('string');
     });
 
-    it('stream yields heartbeat after delay', async () => {
-      jest.useFakeTimers();
-      const { metricsStreamEvents } = await import('../src/stats/routes/stream');
-      const gen = metricsStreamEvents();
+    it('stream yields heartbeat immediately after connected', async () => {
+      const { streamToUI } = await import('../src/stats/streamChannel');
+      const gen = streamToUI();
       await gen.next();
-      const nextPromise = gen.next();
-      jest.advanceTimersByTime(5000);
-      const second = await nextPromise;
-      jest.useRealTimers();
+      const second = await gen.next();
       expect(second.done).toBe(false);
       expect(second.value?.event).toBe('heartbeat');
       expect(JSON.parse(second.value!.data).ts).toBeDefined();
+    });
+
+    it('stream yields heartbeat after delay', async () => {
+      jest.useFakeTimers();
+      const { streamToUI } = await import('../src/stats/streamChannel');
+      const gen = streamToUI();
+      await gen.next();
+      await gen.next();
+      const nextPromise = gen.next();
+      jest.advanceTimersByTime(5000);
+      const third = await nextPromise;
+      jest.useRealTimers();
+      expect(third.done).toBe(false);
+      expect(third.value?.event).toBe('heartbeat');
+      expect(JSON.parse(third.value!.data).ts).toBeDefined();
+    });
+
+    it('pushToStream broadcasts to all connected clients', async () => {
+      const { streamToUI, pushToStream } = await import('../src/stats/streamChannel');
+      const genA = streamToUI();
+      const genB = streamToUI();
+      await genA.next(); // connected
+      await genB.next(); // connected
+      await genA.next(); // heartbeat
+      await genB.next(); // heartbeat
+      const nextA = genA.next();
+      const nextB = genB.next();
+      pushToStream('metric', JSON.stringify({ id: '1', operation: 'query' }));
+      const [resA, resB] = await Promise.all([nextA, nextB]);
+      expect(resA.done).toBe(false);
+      expect(resA.value?.event).toBe('metric');
+      expect(JSON.parse(resA.value!.data).id).toBe('1');
+      expect(resB.done).toBe(false);
+      expect(resB.value?.event).toBe('metric');
+      expect(JSON.parse(resB.value!.data).id).toBe('1');
     });
   });
 });

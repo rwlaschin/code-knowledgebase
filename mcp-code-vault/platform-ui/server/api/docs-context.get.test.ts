@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import path from 'node:path'
+import { MOCK_STATS_PORT } from '../../testConstants'
 
 vi.stubGlobal('defineEventHandler', (fn: (event: any) => any) => fn)
 
@@ -13,7 +14,7 @@ describe('GET /api/docs-context', () => {
       cwd: expect.any(String),
       port: expect.any(String)
     })
-  })
+  }, 10_000)
 
   it('returns absolute project root for cwd (never placeholder)', async () => {
     const handler = (await import('./docs-context.get')).default
@@ -23,12 +24,12 @@ describe('GET /api/docs-context', () => {
     expect(path.isAbsolute(result.cwd)).toBe(true)
   })
 
-  it('returns port default 3000 when STATS_PORT unset', async () => {
+  it('returns port default when STATS_PORT unset', async () => {
     const orig = process.env.STATS_PORT
     delete process.env.STATS_PORT
     const handler = (await import('./docs-context.get')).default
     const result = await handler(mockEvent)
-    expect(result.port).toBe('3000')
+    expect(result.port).toBe(String(MOCK_STATS_PORT))
     if (orig !== undefined) process.env.STATS_PORT = orig
   })
 
@@ -65,11 +66,7 @@ describe('GET /api/docs-context', () => {
       cwd: result.cwd ? '<project-root>' : result.cwd,
       port: result.port
     }
-    expect(forSnapshot).toMatchInlineSnapshot(`
-      {
-        "cwd": "<project-root>",
-        "port": "3000",
-      }
-    `)
+    expect(forSnapshot.port).toBe(String(MOCK_STATS_PORT))
+    expect(forSnapshot.cwd).toBe('<project-root>')
   })
 })

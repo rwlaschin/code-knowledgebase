@@ -1,72 +1,145 @@
-// Type for global watcher registry
-declare global {
-  // eslint-disable-next-line no-var
-  var __mcp_watchers: Record<string, any> | undefined;
-}
-// File walker & Incremental Sync (mtime/MD5)
-
-// Type for global watcher registry
+// File walker: uses ignore manager, calls out to a processor per path. No file I/O or DB calls in loops.
 declare global {
   // eslint-disable-next-line no-var
   var __mcp_watchers: Record<string, any> | undefined;
 }
 
-// LLM IMPLEMENT FUNCTIONALITY
-export async function scanProject(projectKey: string): Promise<{ filesScanned: number; filesUpdated: number; symbolsFound: number }> {
-  // LOAD CONFIG FROM DB FOR PROJECT
+import { shouldIgnore } from './utils/ignore-mgr';
+import { createDefaultScanProcessor } from './processors/defaultScanProcessor';
+
+export { createDefaultStreamProcessor } from './processors/defaultStreamProcessor';
+
+/** One chunk of file content with line range. Produced by the stream processor. */
+export interface FileChunk {
+  file: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+}
+
+/** Result from a scan processor for one path. Scanner batches these and writes once. */
+export interface ScanResult {
+  file: string;
+  summary: string;
+}
+
+/** Processes one file path; may do further filtering. Returns summary for DB or null to skip. */
+export type ScanProcessor = (filePath: string) => Promise<ScanResult | null>;
+
+/** Processes one file path; may do further filtering. Yields chunks (caller may open file). */
+export type StreamChunkProcessor = (filePath: string) => AsyncIterable<FileChunk>;
+
+function walkDir(
+  dir: string,
+  fs: typeof import('fs'),
+  path: typeof import('path')
+): string[] {
+  const results: string[] = [];
+  for (const file of fs.readdirSync(dir)) {
+    const filePath = path.join(dir, file);
+    if (fs.statSync(filePath).isDirectory()) {
+      if (!shouldIgnore(filePath)) results.push(...walkDir(filePath, fs, path));
+    } else {
+      if (!shouldIgnore(filePath)) results.push(filePath);
+    }
+  }
+  return results;
+}
+
+/** Resolve project root. One DB call. */
+async function getProjectRoot(projectKey: string): Promise<string> {
   const { connectToDatabase } = await import('./db');
-  const { shouldIgnore } = await import('./utils/ignore-mgr');
-  const { analyzeFile } = await import('./analyzer');
-  const fs = await import('fs');
-  const path = await import('path');
   const db = await connectToDatabase();
   const project = await db.collection('registry').findOne({ project_key: projectKey });
-  if (!project) throw new Error('Project not found');
-  const root = project.root_path;
-  let filesScanned = 0, filesUpdated = 0, symbolsFound = 0;
-  const walk = (dir: string): string[] => {
-    let results: string[] = [];
-    for (const file of fs.readdirSync(dir)) {
-      const filePath = path.join(dir, file);
-      if (fs.statSync(filePath).isDirectory()) {
-        if (!shouldIgnore(filePath)) results = results.concat(walk(filePath));
-      } else {
-        if (!shouldIgnore(filePath)) results.push(filePath);
-      }
+  if (!project?.root_path) throw new Error('Project not found');
+  return project.root_path as string;
+}
+
+/**
+ * Walk project paths and stream back chunks by calling the provided processor per path.
+ * Scanner does not open files; the processor handles reading and further filtering.
+ * Uses the ignore manager for the walk.
+ */
+export async function* streamProjectChunks(
+  projectKey: string,
+  options: { processor: StreamChunkProcessor }
+): AsyncGenerator<FileChunk> {
+  const root = await getProjectRoot(projectKey);
+  const fs = await import('fs');
+  const path = await import('path');
+  const paths = walkDir(root, fs, path);
+
+  for (const filePath of paths) {
+    for await (const chunk of options.processor(filePath)) {
+      yield chunk;
     }
-    return results;
-  };
-  const allFiles = walk(root);
-  filesScanned = allFiles.length;
-  for (const file of allFiles) {
-    // TODO: Check mtime/MD5 for incremental update
-    const summary = await analyzeFile(projectKey, file);
-    filesUpdated++;
-    // Store symbols in DB (simplified: just store summary)
-    await db.collection('symbols').updateOne(
-      { project_key: projectKey, file },
-      { $set: { summary, updated: new Date() } },
-      { upsert: true }
-    );
-    // Count symbols (very rough: count 'class'/'function'/'interface' in summary)
-    symbolsFound += (summary?.match(/(class |function |interface )/g) ?? []).length;
   }
-  // Watch for file changes and update DB (basic implementation)
-  // In production, use chokidar or similar for robust watching
+}
+
+/**
+ * Walk project paths and run the provided processor per path. Collects results and
+ * performs one bulk write at the end (no DB calls in the loop). Uses the ignore manager.
+ * If no processor is passed, uses the default that analyzes files for symbols.
+ */
+export async function scanProject(
+  projectKey: string,
+  options?: { processor?: ScanProcessor }
+): Promise<{ filesScanned: number; filesUpdated: number; symbolsFound: number }> {
+  const root = await getProjectRoot(projectKey);
+  const fs = await import('fs');
+  const path = await import('path');
+  const { connectToDatabase } = await import('./db');
+  const database = await connectToDatabase();
+  const paths = walkDir(root, fs, path);
+  const processor = options?.processor ?? createDefaultScanProcessor(projectKey);
+
+  const results: ScanResult[] = [];
+  for (const filePath of paths) {
+    const result = await processor(filePath);
+    if (result) results.push(result);
+  }
+
+  if (results.length > 0) {
+    const now = new Date();
+    await database.collection('symbols').bulkWrite(
+      results.map(({ file, summary }) => ({
+        updateOne: {
+          filter: { project_key: projectKey, file },
+          update: { $set: { summary, updated: now } },
+          upsert: true
+        }
+      }))
+    );
+  }
+
+  let symbolsFound = 0;
+  for (const r of results) {
+    symbolsFound += (r.summary?.match(/(class |function |interface )/g) ?? []).length;
+  }
+
+  // Watcher: one update per change; uses ignore manager
   if (!globalThis.__mcp_watchers) globalThis.__mcp_watchers = {};
   if (!globalThis.__mcp_watchers[projectKey]) {
     const chokidar = (await import('chokidar')).default;
     const watcher = chokidar.watch(root, { ignored: /node_modules/ });
     watcher.on('change', async (changedPath: string) => {
       if (shouldIgnore(changedPath)) return;
-      const summary = await analyzeFile(projectKey, changedPath);
-      await db.collection('symbols').updateOne(
-        { project_key: projectKey, file: changedPath },
-        { $set: { summary, updated: new Date() } },
-        { upsert: true }
-      );
+      const scanProcessor = options?.processor ?? createDefaultScanProcessor(projectKey);
+      const result = await scanProcessor(changedPath);
+      if (result) {
+        await database.collection('symbols').updateOne(
+          { project_key: projectKey, file: changedPath },
+          { $set: { summary: result.summary, updated: new Date() } },
+          { upsert: true }
+        );
+      }
     });
     globalThis.__mcp_watchers[projectKey] = watcher;
   }
-  return { filesScanned, filesUpdated, symbolsFound };
+
+  return {
+    filesScanned: paths.length,
+    filesUpdated: results.length,
+    symbolsFound
+  };
 }
