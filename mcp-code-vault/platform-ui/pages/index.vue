@@ -18,14 +18,14 @@
       </div>
     </div>
 
-    <!-- Live stream not connected (Socket.IO). Only show after we've actually had an error, not on first load. -->
+    <!-- Live stream not connected. Only show after we've actually had an error, not on first load. -->
     <div
       v-if="streamStatus === 'error' && hasStreamErrorOccurred"
       class="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 mb-8 text-amber-200/90"
     >
       <p class="font-medium">Live stream not connected</p>
       <p class="text-sm mt-1 opacity-90">
-        The stats live stream (heartbeats, metrics) could not connect. This is <strong>not</strong> discovery — if you see "Discovery: N server(s)" below, backends registered successfully. The stream connects this page to the stats server over Socket.IO.
+        The stats live stream (heartbeats, metrics) could not connect. This is <strong>not</strong> discovery — if you see "Registered MCPs" with server(s) below, backends registered successfully. The stream connects this page to the stats server over Socket.IO.
       </p>
       <p v-if="publicConfig.useStatsProxy" class="text-sm mt-1 opacity-90">
         The UI proxies <code class="px-1.5 py-0.5 rounded bg-black/30">/socket.io</code> to the port <code class="px-1.5 py-0.5 rounded bg-black/30">STATS_PORT</code> (default 3000). Ensure the backend is running on that port, e.g. <code class="px-1.5 py-0.5 rounded bg-black/30">PORT={{ backendPortForCopy }} npm run dev</code> in mcp-code-vault. Check the stream log below and browser Network → WS for errors.
@@ -125,14 +125,24 @@
       </GlassCard>
     </div>
 
-    <!-- Registered backends (discovery): poll so we show when MCPs register. -->
+    <!-- Registered MCPs (discovery): poll so we show when MCPs register. -->
     <ClientOnly>
-      <section class="mb-6" aria-label="Registered backends">
-        <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-widest mb-2">Registered backends</h2>
-        <p class="text-sm text-gray-400">
-          <span v-if="discoveryServers.length === 0">No backends registered yet. They register when they receive the UI broadcast on UDP 9255.</span>
-          <span v-else>{{ discoveryServers.length }} server(s): {{ discoveryServers.map((s) => `${s.projectName}:${s.port}`).join(', ') }}</span>
+      <section class="mb-6" aria-label="Registered MCPs">
+        <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-widest mb-2">
+          Registered MCPs ({{ discoveryServers.length }} {{ discoveryServers.length === 1 ? 'server' : 'servers' }})
+        </h2>
+        <p v-if="discoveryServers.length === 0" class="text-sm text-gray-400">
+          No MCPs registered yet. They register when they receive the UI broadcast on UDP 9255.
         </p>
+        <div v-else class="flex flex-wrap gap-2">
+          <span
+            v-for="s in discoveryServers"
+            :key="`${s.projectName}:${s.port}`"
+            class="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-mono bg-white/5 border border-white/10 text-gray-300"
+          >
+            {{ s.projectName }}<span class="text-gray-500">:</span>{{ s.port }}
+          </span>
+        </div>
       </section>
     </ClientOnly>
 
@@ -140,8 +150,8 @@
     <ClientOnly>
       <section class="mb-8" aria-label="Stream event log">
         <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-widest mb-4">Stream event log</h2>
-        <GlassCard class="!p-0 overflow-hidden flex flex-col max-h-[320px]">
-          <div class="overflow-y-auto min-h-0 flex-1">
+        <GlassCard class="!p-0 overflow-hidden">
+          <div class="h-[320px] overflow-y-auto overscroll-contain">
             <table class="w-full text-left text-sm">
               <thead class="sticky top-0 z-10 bg-[#1A1726] border-b border-white/10">
                 <tr>
@@ -151,17 +161,27 @@
                 </tr>
               </thead>
               <tbody class="text-gray-300">
-              <tr v-if="streamEventRows.length === 0" class="border-b border-white/5">
+              <tr v-if="displayRows.length === 0" class="border-b border-white/5">
                 <td colspan="3" class="px-4 py-6 text-center text-gray-500">No events yet. Backend sends connected, heartbeat, and metric over Socket.IO.</td>
               </tr>
               <tr
-                v-for="(row, i) in streamEventRows"
-                :key="i"
+                v-for="(row, i) in displayRows"
+                :key="row.isGroupRow ? `g-${row.groupIndex}` : `r-${i}`"
                 class="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
               >
-                <td class="px-4 py-3">
+                <td class="relative py-3 pl-10 pr-4">
+                  <button
+                    v-if="row.isGroupRow && row.count != null"
+                    type="button"
+                    class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center p-0 text-[10px] font-medium bg-violet-500/40 text-violet-200 border border-violet-400/30 hover:bg-violet-500/50 transition-colors"
+                    :title="`${row.count} heartbeats (click to expand)`"
+                    :aria-label="`${row.count} heartbeats grouped, click to expand`"
+                    @click="toggleGroupExpanded(row.groupIndex!)"
+                  >
+                    {{ row.count! > 99 ? '99+' : row.count }}
+                  </button>
                   <span
-                    class="rounded-full px-2 py-0.5 text-xs font-medium"
+                    class="rounded-full px-2 py-0.5 text-xs font-medium inline-block"
                     :class="row.event === 'connected' ? 'bg-emerald-500/30 text-emerald-200' : row.event === 'heartbeat' ? 'bg-violet-500/30 text-violet-200' : 'bg-white/10 text-gray-200'"
                   >
                     {{ row.event }}
@@ -176,14 +196,14 @@
         </GlassCard>
         <!-- Browser logs: same as console [stream] messages -->
         <div class="mt-4 p-3 rounded-lg bg-black/30 border border-white/10">
-          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browser logs (Socket.IO)</p>
-          <pre class="text-xs text-gray-400 font-mono overflow-auto max-h-32 whitespace-pre-wrap break-all">{{ streamBrowserLogs }}</pre>
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browser logs</p>
+          <pre class="text-xs text-gray-400 font-mono overflow-auto max-h-96 whitespace-pre-wrap break-all">{{ streamBrowserLogs }}</pre>
         </div>
       </section>
       <template #fallback>
         <section class="mb-8" aria-label="Stream event log">
           <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-widest mb-4">Stream event log</h2>
-          <GlassCard class="!p-0 overflow-hidden flex flex-col max-h-[320px]">
+          <GlassCard class="!p-0 overflow-hidden flex flex-col h-96">
             <div class="overflow-y-auto min-h-0 flex-1">
               <table class="w-full text-left text-sm">
                 <thead class="sticky top-0 z-10 bg-[#1A1726] border-b border-white/10">
@@ -202,7 +222,7 @@
             </div>
           </GlassCard>
           <div class="mt-4 p-3 rounded-lg bg-black/30 border border-white/10">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browser logs (Socket.IO)</p>
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browser logs</p>
             <pre class="text-xs text-gray-400 font-mono overflow-auto max-h-32 whitespace-pre-wrap break-all"></pre>
           </div>
         </section>
@@ -250,7 +270,78 @@ const backendPortForCopy = computed(() => {
 
 const streamStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
 const streamEventTime = ref('')
-const streamEventRows = ref<{ event: string; time: string; data: string }[]>([])
+/** Raw stream events (newest first); pushStreamEvent appends here. */
+const streamEventsRaw = ref<{ event: string; time: string; data: string }[]>([])
+/** Grouped rows: consecutive heartbeats as one row with count + latest time/data; rawEvents for expand. */
+const streamEventRows = computed(() => {
+  const raw = streamEventsRaw.value
+  if (raw.length === 0) return []
+  type Row = { event: string; time: string; data: string; count?: number; rawEvents?: { time: string; data: string }[] }
+  const out: Row[] = []
+  let i = 0
+  while (i < raw.length) {
+    if (raw[i].event !== 'heartbeat') {
+      out.push({ ...raw[i] })
+      i += 1
+      continue
+    }
+    const group: { time: string; data: string }[] = []
+    let latestTime = raw[i].time
+    let latestData = raw[i].data
+    while (i < raw.length && raw[i].event === 'heartbeat') {
+      group.push({ time: raw[i].time, data: raw[i].data })
+      latestTime = raw[i].time
+      latestData = raw[i].data
+      i += 1
+    }
+    out.push({
+      event: 'heartbeat',
+      time: latestTime,
+      data: latestData,
+      ...(group.length > 1 ? { count: group.length, rawEvents: group } : {})
+    })
+  }
+  return out
+})
+
+/** Which grouped rows are expanded (show individual heartbeats). Set of row index in streamEventRows. */
+const expandedGroupIndices = ref<Set<number>>(new Set())
+
+/** Flattened rows for table: expanded groups show a clickable group row (stays visible) then individual rows; click group row to collapse. */
+const displayRows = computed(() => {
+  const rows = streamEventRows.value
+  const expanded = expandedGroupIndices.value
+  const out: { event: string; time: string; data: string; count?: number; groupIndex?: number; isGroupRow?: boolean; rawEvents?: { time: string; data: string }[] }[] = []
+  rows.forEach((row, idx) => {
+    if (row.count != null && row.rawEvents && expanded.has(idx)) {
+      const [first, ...rest] = row.rawEvents
+      out.push({
+        event: 'heartbeat',
+        time: first.time,
+        data: first.data,
+        groupIndex: idx,
+        isGroupRow: true,
+        count: row.count,
+        rawEvents: row.rawEvents
+      })
+      rest.forEach((re) => out.push({ event: 'heartbeat', time: re.time, data: re.data }))
+    } else {
+      out.push({
+        ...row,
+        ...(row.count != null ? { groupIndex: idx, isGroupRow: true, rawEvents: row.rawEvents } : {})
+      })
+    }
+  })
+  return out
+})
+
+function toggleGroupExpanded(groupIndex: number) {
+  const next = new Set(expandedGroupIndices.value)
+  if (next.has(groupIndex)) next.delete(groupIndex)
+  else next.add(groupIndex)
+  expandedGroupIndices.value = next
+}
+
 /** Browser logs visible on the page (same as console [stream] messages). */
 const streamBrowserLogs = ref('')
 /** Only show Connected after we get a heartbeat (proves backend stream is alive). */
@@ -258,7 +349,7 @@ const hasReceivedHeartbeat = ref(false)
 /** Only show the stream error banner after we've actually had a connect_error or disconnect (not on first paint). */
 const hasStreamErrorOccurred = ref(false)
 
-/** Registered backends (discovery); polled so list updates when MCPs register. */
+/** Registered MCPs (discovery); polled so list updates when MCPs register. */
 const discoveryServers = ref<{ projectName: string; port: number }[]>([])
 let discoveryPollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -474,12 +565,13 @@ const rpmChartOptions = ref<ApexOptions | null>({
   tooltip: { theme: 'dark' }
 })
 
+const STREAM_EVENT_CAP = 200
+
 function pushStreamEvent(data: string, eventType: string) {
-  streamEventTime.value = new Date().toLocaleString()
-  streamEventRows.value = [
-    { event: eventType, time: new Date().toLocaleString(), data: data.slice(0, 120) },
-    ...streamEventRows.value.slice(0, 49)
-  ]
+  const time = new Date().toLocaleString()
+  streamEventTime.value = time
+  const next = [{ event: eventType, time, data: data.slice(0, 120) }, ...streamEventsRaw.value]
+  streamEventsRaw.value = next.slice(0, STREAM_EVENT_CAP)
 }
 
 async function fetchInitialMetrics() {
