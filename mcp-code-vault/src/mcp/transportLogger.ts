@@ -1,9 +1,9 @@
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio';
-import { runShutdown } from '../shutdown';
-import { postMetric } from '../stats/metricsClient';
+import { runShutdown, getShutdownOnTransportClose } from '../shutdown';
 import { appendRequestLog } from './requestLog';
+import { disconnectFromPrimary } from '../primaryClient';
 
 function getMethod(message: JSONRPCMessage): string {
   if (message && typeof message === 'object' && 'method' in message && typeof (message as { method?: unknown }).method === 'string') {
@@ -16,7 +16,8 @@ type MessageHandler = (message: JSONRPCMessage, extra?: unknown) => void;
 
 /**
  * Wraps StdioServerTransport to log each incoming request method to logs/mcp-requests.log
- * (even in stdio mode) so Cursor users can see when a query arrives.
+ * (even in stdio mode). Metrics for user-initiated tool calls (ping, config, etc.) are
+ * recorded by withMetrics(operation) in the tool handlers, not here.
  */
 export function createLoggingStdioTransport(): Transport {
   const inner = new StdioServerTransport();
@@ -27,8 +28,13 @@ export function createLoggingStdioTransport(): Transport {
     },
     set onclose(handler) {
       inner.onclose = () => {
-        if (handler) handler();
-        runShutdown().then(() => {});
+        if (getShutdownOnTransportClose()) {
+          disconnectFromPrimary();
+          if (handler) handler();
+          runShutdown().then(() => {});
+        } else {
+          if (handler) handler();
+        }
       };
     },
     get onerror() {
@@ -44,17 +50,7 @@ export function createLoggingStdioTransport(): Transport {
       inner.onmessage = handler
         ? (message: JSONRPCMessage) => {
             appendRequestLog(getMethod(message));
-            const now = new Date().toISOString();
-            postMetric({
-              instance_id: process.env.INSTANCE_ID ?? 'mcp-code-vault',
-              operation: 'query',
-              started_at: now,
-              ended_at: now,
-              duration_ms: 0,
-              status: 'ok',
-              metadata: { method: getMethod(message) }
-            });
-            handler(message, undefined);
+            handler(message);
           }
         : undefined;
     },

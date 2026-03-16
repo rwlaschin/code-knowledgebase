@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
-import DefaultLayout from './default.vue';
+import DefaultLayout from '../../layouts/default.vue';
 
 const mockUseRoute = vi.fn();
 const mockUseRouter = vi.fn();
@@ -39,12 +39,13 @@ describe('Default layout', () => {
       }
     });
     const links = wrapper.findAll('a[href^="#"]');
-    expect(links.length).toBe(7);
+    expect(links.length).toBe(8);
     expect(links.map((l) => l.attributes('href'))).toEqual([
       '#quick-start',
       '#setting-up-mcp-cursor',
       '#using-the-mcp',
       '#tool-ping',
+      '#tool-settings',
       '#tool-config',
       '#user-interface',
       '#configuration'
@@ -53,6 +54,7 @@ describe('Default layout', () => {
     expect(wrapper.text()).toContain('Setting up the MCP server in Cursor');
     expect(wrapper.text()).toContain('MCP tools reference');
     expect(wrapper.text()).toContain('ping');
+    expect(wrapper.text()).toContain('settings');
     expect(wrapper.text()).toContain('config');
     expect(wrapper.text()).toContain('Platform UI');
   });

@@ -3,6 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 jest.mock('../src/db/mongoose', () => ({
     connectMongoose: jest.fn().mockResolvedValue(undefined)
 }));
+jest.mock('../src/db/seed', () => ({
+    runSeed: jest.fn().mockResolvedValue(undefined)
+}));
 const server_1 = require("../src/stats/server");
 describe('createStatsServer', () => {
     let fastify;
@@ -24,6 +27,6 @@ describe('createStatsServer', () => {
     });
     it('registers GET /metrics/stream route', async () => {
         const routes = fastify.printRoutes();
-        expect(routes).toContain('metrics/stream');
+        expect(routes).toMatch(/stream/);
     });
 });

@@ -4,6 +4,7 @@ describe('Metric model', () => {
   const validDoc = {
     instance_id: 'test-instance',
     operation: 'scan',
+    kind: 'event' as const,
     started_at: new Date(),
     ended_at: new Date(),
     duration_ms: 100,

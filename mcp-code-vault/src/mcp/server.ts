@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
 import { withMetrics } from '../stats/metricsClient';
 import { createLoggingStdioTransport } from './transportLogger';
-import { getServerCwd, getServerPort, getConfigToolContent } from './context';
+import { getServerCwd, getServerPort, applyConfig, getSettingsContent } from './context';
 
 function getInstructions(): string {
   const cwd = getServerCwd();
@@ -10,8 +10,10 @@ function getInstructions(): string {
 
 Tools:
 - \`ping\`: verify connection (returns "pong").
-- \`config\`: return setup/config (cwd, port, MCP snippet).
+- \`settings\`: return current settings (cwd, port). Read-only.
+- \`config\`: set settings (cwd, port). Pass cwd and/or port to update.
 
+Doc: See the Docs page in the Platform UI (e.g. http://localhost:2999/docs) for setup, MCP in Cursor, and configuration.
 Use \`tools/list\` to list tools.`;
 }
 
@@ -29,7 +31,7 @@ export function createMcpServerApp(): McpServer {
     }
   );
 
-  const pingHandler = withMetrics('ping', async (_args: unknown, _extra: unknown) => ({
+  const pingHandler = withMetrics('ping', 'query', async (_args: unknown, _extra: unknown) => ({
     content: [{ type: 'text' as const, text: 'pong' }]
   }));
 
@@ -42,15 +44,31 @@ export function createMcpServerApp(): McpServer {
     pingHandler as (args: unknown, extra: unknown) => Promise<{ content: { type: 'text'; text: string }[] }>
   );
 
-  const configHandler = withMetrics('config', async (_args: unknown, _extra: unknown) => {
-    const text = getConfigToolContent();
+  const settingsHandler = withMetrics('settings', 'query', async () => {
+    const text = getSettingsContent();
+    return { content: [{ type: 'text' as const, text }] };
+  });
+
+  server.registerTool(
+    'settings',
+    {
+      description: 'Return current server settings (cwd, port). Read-only.',
+      inputSchema: {}
+    },
+    settingsHandler as (args: unknown, extra: unknown) => Promise<{ content: { type: 'text'; text: string }[] }>
+  );
+
+  const configHandler = withMetrics('config', 'query', async (args: unknown) => {
+    const input = (args && typeof args === 'object' ? args : {}) as { cwd?: string; port?: string };
+    const { set } = applyConfig(input);
+    const text = set.length > 0 ? `Set: ${set.join(', ')}` : 'No settings provided. Pass cwd and/or port to set.';
     return { content: [{ type: 'text' as const, text }] };
   });
 
   server.registerTool(
     'config',
     {
-      description: 'Return setup/config: cwd, port, and MCP config snippet for Cursor.',
+      description: 'Set server settings: cwd, port. Pass cwd and/or port to update.',
       inputSchema: {}
     },
     configHandler as (args: unknown, extra: unknown) => Promise<{ content: { type: 'text'; text: string }[] }>

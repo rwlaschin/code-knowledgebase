@@ -6,7 +6,7 @@ beforeAll(() => {
 
 describe('nuxt.config', () => {
   it('exports nuxt config with devServer and nitro', async () => {
-    const mod = await import('./nuxt.config');
+    const mod = await import('../nuxt.config');
     const config = mod.default;
     expect(config).toBeDefined();
     expect(config.devServer).toBeDefined();

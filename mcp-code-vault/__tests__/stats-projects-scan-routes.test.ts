@@ -66,6 +66,13 @@ describe('Stats projects and scan routes', () => {
         { key: 'default', name: 'Default Project' },
         { key: 'other', name: 'Other' }
       ]);
+      expect(Array.isArray(body.projects)).toBe(true);
+      body.projects.forEach((p: { key: string; name: string }) => {
+        expect(p).toHaveProperty('key');
+        expect(p).toHaveProperty('name');
+        expect(typeof p.key).toBe('string');
+        expect(typeof p.name).toBe('string');
+      });
     });
 
     it('returns empty array when no projects', async () => {
@@ -114,6 +121,9 @@ describe('Stats projects and scan routes', () => {
       expect(body.filesUpdated).toBe(5);
       expect(body.files).toHaveLength(1);
       expect(body.files[0]).toEqual({ relativePath: 'a.ts', state: 'fresh' });
+      expect(typeof body.filesProcessed).toBe('number');
+      expect(typeof body.filesUpdated).toBe('number');
+      expect(Array.isArray(body.files)).toBe(true);
     });
   });
 });

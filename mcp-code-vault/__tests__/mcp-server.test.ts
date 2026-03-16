@@ -7,7 +7,8 @@ jest.mock('../src/mcp/context', () => {
   return {
     getServerCwd: jest.fn(() => '/test-cwd'),
     getServerPort: jest.fn(() => String(MOCK_STATS_PORT)),
-    getConfigToolContent: jest.fn(() => `cwd: /test-cwd\nport: ${MOCK_STATS_PORT}\n\nMCP config snippet:\n{}`)
+    applyConfig: jest.fn(() => ({ set: [] })),
+    getSettingsContent: jest.fn(() => `Code-vault config\ncwd: /test-cwd\nport: ${MOCK_STATS_PORT}\n\nMCP snippet (for Cursor)\n{}`)
   };
 });
 

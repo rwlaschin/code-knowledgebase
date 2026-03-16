@@ -65,6 +65,7 @@ describe('Stats metrics routes', () => {
         _id: { toString: () => 'abc123' },
         instance_id: 'i1',
         operation: 'query',
+        kind: 'query',
         started_at: new Date('2025-01-01T00:00:00.000Z'),
         ended_at: new Date('2025-01-01T00:00:01.000Z'),
         duration_ms: 100,
@@ -80,6 +81,7 @@ describe('Stats metrics routes', () => {
         payload: {
           instance_id: 'i1',
           operation: 'query',
+          kind: 'query',
           started_at: '2025-01-01T00:00:00.000Z',
           ended_at: '2025-01-01T00:00:01.000Z',
           duration_ms: 100,
@@ -91,6 +93,12 @@ describe('Stats metrics routes', () => {
       expect(JSON.parse(res.payload)).toEqual({ ok: true });
       expect(mockCreate).toHaveBeenCalled();
       expect(mockPushToStream).toHaveBeenCalledWith('metric', expect.any(String));
+      const pushedPayload = JSON.parse(mockPushToStream.mock.calls[0][1]);
+      expect(pushedPayload.operation).toBe('query');
+      expect(pushedPayload.kind).toBe('query');
+      expect(pushedPayload.instance_id).toBe('i1');
+      expect(new Date(pushedPayload.started_at).toISOString()).toBe(pushedPayload.started_at);
+      expect(new Date(pushedPayload.ended_at).toISOString()).toBe(pushedPayload.ended_at);
     });
   });
 
@@ -102,6 +110,7 @@ describe('Stats metrics routes', () => {
             _id: { toString: () => 'id1' },
             instance_id: 'i1',
             operation: 'query',
+            kind: 'query',
             started_at: new Date('2025-01-01T00:00:00.000Z'),
             ended_at: new Date('2025-01-01T00:00:01.000Z'),
             duration_ms: 50,

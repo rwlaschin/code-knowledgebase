@@ -5,16 +5,18 @@ import { pushToStream } from '../streamChannel';
 
 const metricBodySchema = {
   type: 'object',
-  required: ['instance_id', 'operation', 'started_at', 'ended_at', 'duration_ms', 'status'],
+  required: ['instance_id', 'operation', 'kind', 'started_at', 'ended_at', 'duration_ms', 'status'],
   properties: {
     instance_id: { type: 'string' },
     operation: { type: 'string' },
+    kind: { type: 'string', enum: ['query', 'event'] },
     started_at: { type: 'string', format: 'date-time' },
     ended_at: { type: 'string', format: 'date-time' },
     duration_ms: { type: 'number' },
     status: { type: 'string', enum: ['ok', 'error'] },
     error_code: { type: 'string' },
-    metadata: { type: 'object' }
+    metadata: { type: 'object' },
+    role: { type: 'string', enum: ['primary', 'client'] }
   }
 };
 
@@ -23,6 +25,7 @@ export async function metricRoutes(fastify: FastifyInstance) {
     Body: {
       instance_id: string;
       operation: string;
+      kind: 'query' | 'event';
       started_at: string;
       ended_at: string;
       duration_ms: number;
@@ -33,8 +36,8 @@ export async function metricRoutes(fastify: FastifyInstance) {
   }>('/metrics', {
     schema: { body: metricBodySchema }
   }, async (request, reply) => {
-    const body = request.body;
-    writeProcessLog(`[BACKEND] POST /metrics received operation=${body.operation} instance_id=${body.instance_id}\n`);
+    const { role, ...body } = request.body as typeof request.body & { role?: 'primary' | 'client' };
+    writeProcessLog(`[BACKEND] POST /metrics received operation=${body.operation} kind=${body.kind} instance_id=${body.instance_id}\n`);
     const doc = await Metric.create({
       ...body,
       started_at: new Date(body.started_at),
@@ -45,12 +48,14 @@ export async function metricRoutes(fastify: FastifyInstance) {
       _id: (doc as { _id?: unknown })._id?.toString?.() ?? (doc as { id?: string }).id,
       instance_id: doc.instance_id,
       operation: doc.operation,
+      kind: doc.kind,
       started_at: doc.started_at.toISOString(),
       ended_at: doc.ended_at.toISOString(),
       duration_ms: doc.duration_ms,
       status: doc.status,
       error_code: doc.error_code,
-      metadata: doc.metadata
+      metadata: doc.metadata,
+      ...(role ? { role } : {})
     };
     pushToStream('metric', JSON.stringify(payload));
     return reply.send({ ok: true });
@@ -70,6 +75,7 @@ export async function metricRoutes(fastify: FastifyInstance) {
       _id: (d as { _id?: unknown })._id?.toString?.() ?? (d as { id?: string }).id,
       instance_id: (d as { instance_id: string }).instance_id,
       operation: (d as { operation: string }).operation,
+      kind: (d as { kind?: string }).kind ?? 'event',
       started_at: (d as { started_at: Date }).started_at?.toISOString?.() ?? new Date((d as { started_at: string }).started_at).toISOString(),
       ended_at: (d as { ended_at: Date }).ended_at?.toISOString?.() ?? new Date((d as { ended_at: string }).ended_at).toISOString(),
       duration_ms: (d as { duration_ms: number }).duration_ms,

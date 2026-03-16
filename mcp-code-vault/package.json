@@ -11,8 +11,8 @@
     "tsc": "tsc --noEmit",
     "tsc:watch": "tsc --noEmit --watch",
     "test:platform-ui": "cd platform-ui && npm run test:unit",
-    "test:unit": "tsc --noEmit && jest --testPathIgnorePatterns=integration --testPathIgnorePatterns=coverage --testTimeout=1000 --verbose --runInBand --coverage",
-    "test:unit:watch": "jest --testPathIgnorePatterns=integration --testPathIgnorePatterns=coverage --testTimeout=1000 --verbose --runInBand --coverage --watch",
+    "test:unit": "tsc --noEmit && jest --testPathIgnorePatterns=integration --testTimeout=1000 --verbose --runInBand --coverage",
+    "test:unit:watch": "jest --testPathIgnorePatterns=integration --testTimeout=1000 --verbose --runInBand --coverage --watch",
     "test:integration": "jest --testPathPatterns=integration --testPathIgnorePatterns=node_modules --testTimeout=30000 --verbose"
   },
   "dependencies": {

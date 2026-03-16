@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
-import Index from './index.vue';
-import GlassCard from '../components/GlassCard.vue';
-import { MOCK_STATS_URL } from '../testConstants';
+import Index from '../../pages/index.vue';
+import GlassCard from '../../components/GlassCard.vue';
+import { MOCK_STATS_URL, MOCK_STATS_PORT } from '../../testConstants';
 
 const mockSocketHandlers: Record<string, (...args: unknown[]) => void> = {};
 const mockSocket = {
@@ -25,15 +25,35 @@ vi.mock('socket.io-client', () => ({
   io: (...args: unknown[]) => mockIo(...args)
 }));
 
+/** Mock /api/servers with a registered MCP so the UI connects from broadcast (not config fallback). */
+function mockServersWithPort(port: number) {
+  return {
+    ok: true,
+    json: () => Promise.resolve({ servers: [{ projectName: 'mcp', port }] })
+  } as Response;
+}
+
 beforeEach(() => {
-  globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response));
+  globalThis.fetch = vi.fn((url: string) =>
+    Promise.resolve(
+      typeof url === 'string' && url.includes('/api/servers')
+        ? mockServersWithPort(MOCK_STATS_PORT)
+        : { ok: true, json: () => Promise.resolve([]) } as Response
+    )
+  );
 });
 
 describe('Index page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(mockSocketHandlers).forEach((k) => delete mockSocketHandlers[k]);
-    globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response));
+    globalThis.fetch = vi.fn((url: string) =>
+      Promise.resolve(
+        typeof url === 'string' && url.includes('/api/servers')
+          ? mockServersWithPort(MOCK_STATS_PORT)
+          : { ok: true, json: () => Promise.resolve([]) } as Response
+      )
+    );
   });
 
   it('renders and sets up Socket.IO on mount', async () => {
@@ -56,6 +76,13 @@ describe('Index page', () => {
     mockRuntimeConfig.mockReturnValueOnce({
       public: { statsBaseUrl: '3100' }
     });
+    globalThis.fetch = vi.fn((url: string) =>
+      Promise.resolve(
+        typeof url === 'string' && url.includes('/api/servers')
+          ? mockServersWithPort(3100)
+          : { ok: true, json: () => Promise.resolve([]) } as Response
+      )
+    );
     const wrapper = mount(Index, {
       global: {
         components: { GlassCard },
@@ -98,7 +125,7 @@ describe('Index page', () => {
 
     disconnectCb!();
     await wrapper.vm.$nextTick();
-    expect(wrapper.text()).toContain('Live stream not connected');
+    expect(wrapper.text()).toContain('Waiting for connection to MCP server');
   });
 
   it('shows "—" for Files processed and Files updated when no scan data', async () => {

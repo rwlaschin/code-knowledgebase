@@ -6,15 +6,21 @@
 export const stdioMode =
   process.env.MCP_STDIO !== '0' && process.stdout.isTTY !== true;
 
-type LogSink = (message: string) => void;
-let processLogSink: LogSink | null = null;
+export type ProcessLogSink = (message: string) => void;
+const processLogSinks: ProcessLogSink[] = [];
 
-/** Set the sink for writeProcessLog (e.g. file). Call from index once logFile is loaded. */
-export function setProcessLogSink(sink: LogSink): void {
-  processLogSink = sink;
+/** Set the primary sink for writeProcessLog (e.g. file). Replaces any previously set primary. Call from index once logFile is loaded. */
+export function setProcessLogSink(sink: ProcessLogSink): void {
+  processLogSinks.length = 0;
+  processLogSinks.push(sink);
 }
 
-/** In stdio mode we only skip stdout/stderr; the sink (file) is still used. */
+/** Add an extra output for writeProcessLog (e.g. stderr). All sinks receive every message. */
+export function addProcessLogSink(sink: ProcessLogSink): void {
+  processLogSinks.push(sink);
+}
+
+/** Write to all registered process-log sinks (file, stderr, etc.). */
 export function writeProcessLog(message: string): void {
-  if (processLogSink) processLogSink(message);
+  for (const s of processLogSinks) s(message);
 }

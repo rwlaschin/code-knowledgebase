@@ -83,6 +83,7 @@ const docSections = [
   { id: 'setting-up-mcp-cursor', label: 'Setting up the MCP server in Cursor' },
   { id: 'using-the-mcp', label: 'MCP tools reference' },
   { id: 'tool-ping', label: 'ping' },
+  { id: 'tool-settings', label: 'settings' },
   { id: 'tool-config', label: 'config' },
   { id: 'user-interface', label: 'Platform UI' },
   { id: 'configuration', label: 'Configuration' }

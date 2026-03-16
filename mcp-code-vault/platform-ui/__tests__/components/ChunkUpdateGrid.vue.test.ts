@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import ChunkUpdateGrid from './ChunkUpdateGrid.vue';
+import ChunkUpdateGrid from '../../components/ChunkUpdateGrid.vue';
 
 describe('ChunkUpdateGrid', () => {
   it('renders a grid of blocks for each file', () => {

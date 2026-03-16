@@ -38,11 +38,17 @@ describe('logFile', () => {
     it('writes message to stream', () => {
       const write = jest.fn();
       jest.spyOn(fs, 'createWriteStream').mockReturnValue({ write });
-      appendLine('hello\n');
-      expect(write).toHaveBeenCalled();
-      expect(write.mock.calls[0][0]).toContain('hello\n');
-      closeLogFile();
-      jest.restoreAllMocks();
+      const origNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = '';
+      try {
+        appendLine('hello\n');
+        expect(write).toHaveBeenCalled();
+        expect(write.mock.calls[0][0]).toContain('hello\n');
+      } finally {
+        process.env.NODE_ENV = origNodeEnv;
+        closeLogFile();
+        jest.restoreAllMocks();
+      }
     });
     it('does not throw when write throws', () => {
       jest.spyOn(fs, 'createWriteStream').mockReturnValue({

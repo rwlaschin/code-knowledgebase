@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
-import Scan from './scan.vue';
-import GlassCard from '../components/GlassCard.vue';
-import ChunkUpdateGrid from '../components/ChunkUpdateGrid.vue';
-import { MOCK_STATS_URL } from '../testConstants';
+import Scan from '../../pages/scan.vue';
+import GlassCard from '../../components/GlassCard.vue';
+import ChunkUpdateGrid from '../../components/ChunkUpdateGrid.vue';
+import { MOCK_STATS_URL } from '../../testConstants';
 
 const mockFetch = vi.fn();
 const mockSocketHandlers: Record<string, (...args: unknown[]) => void> = {};

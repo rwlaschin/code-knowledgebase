@@ -1,20 +1,22 @@
 const path = require('path');
 
 // We define the absolute paths here so we KNOW they are correct
-const root = __dirname; 
+const root = __dirname;
 const coveragePath = path.resolve(root, 'coverage');
 const nodeModulesPath = path.resolve(root, 'node_modules');
 const distPath = path.resolve(root, 'dist');
-
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  testMatch: ['**/__tests__/**/*.test.ts'],
+  rootDir: root,
+  roots: [root],
+  // Only match __tests__ at repo root (mcp-code-vault), not under platform-ui (Vitest)
+  testMatch: ['<rootDir>/__tests__/**/*.test.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   },
-  
-  // Use the absolute paths we just created. 
+
+  // Use the absolute paths we just created.
   // No <rootDir> tokens, just raw strings from your OS.
   watchPathIgnorePatterns: [
     nodeModulesPath,
@@ -28,7 +30,7 @@ module.exports = {
 
   testPathIgnorePatterns: [
     'node_modules',
-    'integration'
+    'coverage'
   ],
 
   collectCoverageFrom: [
@@ -37,10 +39,13 @@ module.exports = {
     '!**/node_modules/**',
     '!src/db/models/**',
     '!**/__tests__/**',
-    '!src/db/seed.ts',
-    '!src/db/seed-run.ts',
+    '!src/db/seed.ts', /* script shouldn't be in production path */
+    '!src/db/seed-run.ts', /* script shouldn't be in production path */
   ],
   coverageDirectory: 'coverage',
+  // Jest 30's default v8 coverage can report paths that don't match collectCoverageFrom;
+  // babel provider instruments source paths so coverage is reported correctly.
+  coverageProvider: 'babel',
   coverageReporters: ['text', 'text-summary', 'html', 'lcov'],
   coverageThreshold: {
     global: {

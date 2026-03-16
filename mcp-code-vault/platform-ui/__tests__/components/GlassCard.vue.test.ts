@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import GlassCard from './GlassCard.vue';
+import GlassCard from '../../components/GlassCard.vue';
 
 describe('GlassCard', () => {
   it('renders slot content', () => {

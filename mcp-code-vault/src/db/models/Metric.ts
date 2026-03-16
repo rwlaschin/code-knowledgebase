@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IMetric extends Document {
   instance_id: string;
   operation: string;
+  kind: 'query' | 'event';
   started_at: Date;
   ended_at: Date;
   duration_ms: number;
@@ -15,6 +16,7 @@ const MetricSchema = new Schema<IMetric>(
   {
     instance_id: { type: String, required: true },
     operation: { type: String, required: true },
+    kind: { type: String, enum: ['query', 'event'], required: true },
     started_at: { type: Date, required: true },
     ended_at: { type: Date, required: true },
     duration_ms: { type: Number, required: true },

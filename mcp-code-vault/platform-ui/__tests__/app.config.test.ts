@@ -6,7 +6,7 @@ beforeAll(() => {
 
 describe('app.config', () => {
   it('exports app config with title', async () => {
-    const mod = await import('./app.config');
+    const mod = await import('../app.config');
     const config = mod.default;
     expect(config).toBeDefined();
     expect(config.title).toBe('MCP Code Vault - Platform');

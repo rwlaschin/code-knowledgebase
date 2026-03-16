@@ -22,7 +22,7 @@ export default defineConfig({
     },
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
-    include: ['**/*.spec.ts', '**/*.test.ts'],
+    include: ['__tests__/**/*.spec.ts', '__tests__/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'html'],

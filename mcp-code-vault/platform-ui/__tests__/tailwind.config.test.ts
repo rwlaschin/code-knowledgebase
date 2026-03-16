@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import config from './tailwind.config';
+import config from '../tailwind.config';
 
 describe('tailwind.config', () => {
   it('exports a valid Tailwind config with theme.extend', () => {

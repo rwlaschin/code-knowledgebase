@@ -15,6 +15,7 @@ const mongoose_1 = require("../src/db/mongoose");
 describe('mongoose', () => {
     beforeEach(() => {
         mockDisconnect.mockClear();
+        process.env.MONGO_URL = process.env.MONGO_URL ?? 'mongodb://localhost:27017';
     });
     describe('connectMongoose', () => {
         it('calls mongoose.connect with a mongo url', async () => {

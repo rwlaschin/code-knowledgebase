@@ -6,12 +6,13 @@
 import * as dgram from 'dgram';
 import * as http from 'http';
 import * as https from 'https';
-import { startDiscoveryClient, stopDiscoveryClient } from '@/discoveryClient';
+import { startDiscoveryClient, stopDiscoveryClient, tryStartDiscoveryAsPrimary } from '@/discoveryClient';
 import { MOCK_STATS_PORT } from './testConstants';
 
 const handlers: Record<string, (...args: unknown[]) => void> = {};
 const mockSocket: {
   on: jest.Mock;
+  once: jest.Mock;
   bind: jest.Mock;
   setBroadcast: jest.Mock;
   close: jest.Mock;
@@ -20,8 +21,16 @@ const mockSocket: {
     handlers[event] = fn;
     return mockSocket;
   }) as jest.Mock,
-  bind: jest.fn((_port: number, cb: () => void) => {
-    setImmediate(cb);
+  once: jest.fn((event: string, fn: (...args: unknown[]) => void) => {
+    handlers[event] = fn;
+    return mockSocket;
+  }) as jest.Mock,
+  bind: jest.fn((_port: number, cb?: () => void) => {
+    setImmediate(() => {
+      if (cb) cb();
+      const list = handlers['listening'];
+      if (list) list();
+    });
   }),
   setBroadcast: jest.fn(),
   close: jest.fn()
@@ -48,8 +57,11 @@ function getErrorHandler(): (err: NodeJS.ErrnoException) => void {
 }
 
 describe('discoveryClient', () => {
+  let consoleInfoSpy: jest.SpyInstance;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
     stopDiscoveryClient();
     mockHttpRequest.mockImplementation((options: http.RequestOptions, cb?: (res: http.IncomingMessage) => void) => {
       const req = {
@@ -67,6 +79,11 @@ describe('discoveryClient', () => {
       });
       return req;
     });
+  });
+
+  afterEach(async () => {
+    await new Promise((r) => setImmediate(r));
+    consoleInfoSpy?.mockRestore();
   });
 
   describe('startDiscoveryClient', () => {
@@ -162,6 +179,49 @@ describe('discoveryClient', () => {
 
     it('is safe to call when never started', () => {
       expect(() => stopDiscoveryClient()).not.toThrow();
+    });
+  });
+
+  describe('tryStartDiscoveryAsPrimary', () => {
+    it('resolves true when no one holds 9255 and socket binds', async () => {
+      const result = await tryStartDiscoveryAsPrimary(3100);
+      expect(result).toBe(true);
+      expect(dgram.createSocket).toHaveBeenCalledWith('udp4');
+      expect(mockSocket.bind).toHaveBeenCalledWith(9255);
+    });
+
+    it('resolves false when bind fails with EADDRINUSE', async () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockSocket.bind.mockImplementationOnce((_port: number, _cb?: () => void) => {
+        // Emit error synchronously so promise resolves false before any listening
+        const errHandler = handlers['error'];
+        if (errHandler) {
+          const err = new Error('EADDRINUSE') as NodeJS.ErrnoException;
+          err.code = 'EADDRINUSE';
+          errHandler(err);
+        }
+      });
+      const result = await tryStartDiscoveryAsPrimary(3100);
+      expect(result).toBe(false);
+      expect(mockSocket.close).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it('is idempotent: second call returns true without double-binding', async () => {
+      const first = await tryStartDiscoveryAsPrimary(3100);
+      expect(first).toBe(true);
+      const second = await tryStartDiscoveryAsPrimary(3101);
+      expect(second).toBe(true);
+      expect(dgram.createSocket).toHaveBeenCalledTimes(1);
+    });
+
+    it('after stopDiscoveryClient, next tryStartDiscoveryAsPrimary can bind again', async () => {
+      const a = await tryStartDiscoveryAsPrimary(3100);
+      expect(a).toBe(true);
+      stopDiscoveryClient();
+      const b = await tryStartDiscoveryAsPrimary(3101);
+      expect(b).toBe(true);
+      expect(dgram.createSocket).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -37,8 +37,9 @@ function getAppendStream(): fs.WriteStream {
   return appendStream;
 }
 
-/** Append a line to the log file with an ISO timestamp. Always writes to file (in stdio mode we avoid stdout/stderr only). */
+/** Append a line to the log file with an ISO timestamp. In test mode does not write to disk. */
 export function appendLine(message: string): void {
+  if (process.env.NODE_ENV === 'test') return;
   try {
     const stream = getAppendStream();
     const line = message.endsWith('\n') ? message : message + '\n';

@@ -51,6 +51,7 @@ describe('Stats routes', () => {
       const data = JSON.parse(first.value!.data);
       expect(data.ts).toBeDefined();
       expect(typeof data.ts).toBe('string');
+      expect(new Date(data.ts).toISOString()).toBe(data.ts);
     });
 
     it('stream yields heartbeat immediately after connected', async () => {
@@ -60,7 +61,9 @@ describe('Stats routes', () => {
       const second = await gen.next();
       expect(second.done).toBe(false);
       expect(second.value?.event).toBe('heartbeat');
-      expect(JSON.parse(second.value!.data).ts).toBeDefined();
+      const data = JSON.parse(second.value!.data);
+      expect(data.ts).toBeDefined();
+      expect(new Date(data.ts).toISOString()).toBe(data.ts);
     });
 
     it('stream yields heartbeat after delay', async () => {
@@ -75,7 +78,9 @@ describe('Stats routes', () => {
       jest.useRealTimers();
       expect(third.done).toBe(false);
       expect(third.value?.event).toBe('heartbeat');
-      expect(JSON.parse(third.value!.data).ts).toBeDefined();
+      const data = JSON.parse(third.value!.data);
+      expect(data.ts).toBeDefined();
+      expect(new Date(data.ts).toISOString()).toBe(data.ts);
     });
 
     it('pushToStream broadcasts to all connected clients', async () => {
@@ -92,10 +97,31 @@ describe('Stats routes', () => {
       const [resA, resB] = await Promise.all([nextA, nextB]);
       expect(resA.done).toBe(false);
       expect(resA.value?.event).toBe('metric');
-      expect(JSON.parse(resA.value!.data).id).toBe('1');
+      const metricData = JSON.parse(resA.value!.data);
+      expect(metricData.id).toBe('1');
+      expect(metricData.operation).toBe('query');
       expect(resB.done).toBe(false);
       expect(resB.value?.event).toBe('metric');
       expect(JSON.parse(resB.value!.data).id).toBe('1');
+    });
+
+    it('stream yields scan:progress event with filesProcessed and filesUpdated', async () => {
+      const { streamToUI, pushToStream } = await import('../src/stats/streamChannel');
+      const gen = streamToUI();
+      await gen.next(); // connected
+      await gen.next(); // heartbeat
+      const nextPromise = gen.next();
+      pushToStream(
+        'scan:progress',
+        JSON.stringify({ filesProcessed: 5, filesUpdated: 2, projectKey: 'p1' })
+      );
+      const res = await nextPromise;
+      expect(res.done).toBe(false);
+      expect(res.value?.event).toBe('scan:progress');
+      const data = JSON.parse(res.value!.data);
+      expect(data.filesProcessed).toBe(5);
+      expect(data.filesUpdated).toBe(2);
+      expect(data.projectKey).toBe('p1');
     });
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import Config from './config.vue';
-import GlassCard from '../components/GlassCard.vue';
+import Config from '../../pages/config.vue';
+import GlassCard from '../../components/GlassCard.vue';
 
 describe('Config page', () => {
   it('renders Config title and nav', () => {

@@ -10,15 +10,48 @@ jest.mock('../src/mcp/server', () => ({ createMcpServer: jest.fn().mockResolvedV
 jest.mock('../src/logger', () => ({ logger: { info: jest.fn(), fatal: jest.fn() } }));
 jest.mock('../src/discoveryClient', () => ({
   startDiscoveryClient: jest.fn(),
-  stopDiscoveryClient: jest.fn()
+  stopDiscoveryClient: jest.fn(),
+  tryStartDiscoveryAsPrimary: jest.fn().mockResolvedValue(true),
+  startPrimaryAnnouncer: jest.fn(),
+  discoverPrimary: jest.fn().mockResolvedValue(null)
 }));
+jest.mock('../src/primaryServer', () => ({
+  startPrimaryServer: jest.fn(),
+  stopPrimaryServer: jest.fn().mockResolvedValue(undefined)
+}));
+jest.mock('../src/primaryClient', () => ({
+  connectToPrimary: jest.fn(),
+  onPrimaryDisconnect: jest.fn(),
+  disconnectFromPrimary: jest.fn()
+}));
+jest.mock('../src/stats/metricsClient', () => {
+  const actual = jest.requireActual('../src/stats/metricsClient');
+  return {
+    ...actual,
+    setStatsBaseUrl: jest.fn(),
+    markServerReady: jest.fn()
+  };
+});
 const createStatsServer = require('../src/stats/server').createStatsServer;
 const createMcpServer = require('../src/mcp/server').createMcpServer;
 const { logger } = require('../src/logger');
+const discoveryClient = require('../src/discoveryClient');
+const primaryServer = require('../src/primaryServer');
+const primaryClient = require('../src/primaryClient');
+const metricsClient = require('../src/stats/metricsClient');
 
 const { main, localNetworkHost } = require('../src/index');
 
+let stderrWriteSpy: jest.SpyInstance;
+
 describe('index', () => {
+  beforeEach(() => {
+    stderrWriteSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+  afterEach(() => {
+    stderrWriteSpy?.mockRestore();
+  });
+
   describe('localNetworkHost', () => {
     it('returns first IPv4 non-internal address or null', () => {
       const result = localNetworkHost();
@@ -62,10 +95,55 @@ describe('index', () => {
         else delete process.env.MONGO_URL;
       }
 
+      expect(discoveryClient.tryStartDiscoveryAsPrimary).toHaveBeenCalledWith(3999);
       expect(createStatsServer).toHaveBeenCalled();
       expect(mockListen).toHaveBeenCalledWith({ port: 3999, host: '0.0.0.0' });
+      expect(discoveryClient.startDiscoveryClient).toHaveBeenCalledWith(3999);
+      expect(primaryServer.startPrimaryServer).toHaveBeenCalledWith(3999);
       expect(logger.info).toHaveBeenCalled();
       expect(createMcpServer).toHaveBeenCalled();
+    });
+
+    it('when tryStartDiscoveryAsPrimary returns false and connectToPrimary succeeds, runs as client: setStatsBaseUrl, markServerReady(client), no stats server', async () => {
+      createStatsServer.mockClear();
+      primaryServer.startPrimaryServer.mockClear();
+      discoveryClient.startDiscoveryClient.mockClear();
+      discoveryClient.tryStartDiscoveryAsPrimary.mockResolvedValueOnce(false);
+      primaryClient.connectToPrimary.mockResolvedValueOnce({ statsPort: 3999 });
+
+      const origPort = process.env.PORT;
+      process.env.PORT = '3999';
+      try {
+        await main();
+      } finally {
+        process.env.PORT = origPort;
+      }
+
+      expect(discoveryClient.tryStartDiscoveryAsPrimary).toHaveBeenCalledWith(3999);
+      expect(primaryClient.connectToPrimary).toHaveBeenCalledWith(3999, expect.any(String), undefined);
+      expect(metricsClient.setStatsBaseUrl).toHaveBeenCalledWith('http://127.0.0.1:3999');
+      expect(metricsClient.markServerReady).toHaveBeenCalledWith('client');
+      expect(createStatsServer).not.toHaveBeenCalled();
+      expect(primaryServer.startPrimaryServer).not.toHaveBeenCalled();
+      expect(discoveryClient.startDiscoveryClient).not.toHaveBeenCalled();
+    });
+
+    it('when tryStartDiscoveryAsPrimary returns false, registers disconnectFromPrimary for shutdown', async () => {
+      discoveryClient.tryStartDiscoveryAsPrimary.mockResolvedValueOnce(false);
+      primaryClient.connectToPrimary.mockResolvedValueOnce({ statsPort: 4000 });
+
+      const { registerShutdown } = require('../src/shutdown');
+      const shutdownSpy = jest.spyOn(require('../src/shutdown'), 'registerShutdown');
+
+      const origPort = process.env.PORT;
+      process.env.PORT = '3999';
+      try {
+        await main();
+        expect(shutdownSpy).toHaveBeenCalledWith(primaryClient.disconnectFromPrimary);
+      } finally {
+        process.env.PORT = origPort;
+        shutdownSpy.mockRestore();
+      }
     });
   });
 });

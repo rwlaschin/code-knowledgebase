@@ -4,11 +4,14 @@
  * Must never write to stdout/stderr — when run as MCP, stdio is the JSON-RPC channel.
  */
 
+import { writeProcessLog } from '../stdioMode';
+
 const INSTANCE_ID = process.env.INSTANCE_ID ?? 'mcp-code-vault';
 
 export type MetricPayload = {
   instance_id: string;
   operation: string;
+  kind: 'query' | 'event';
   started_at: string;
   ended_at: string;
   duration_ms: number;
@@ -17,9 +20,32 @@ export type MetricPayload = {
   metadata?: Record<string, unknown>;
 };
 
+let statsBaseUrlOverride: string | null = null;
+/** Role for metrics: primary sends to its own server; client sends to primary's server. */
+let metricsRole: 'primary' | 'client' | null = null;
+
 function getStatsBase(): string {
+  if (statsBaseUrlOverride) return statsBaseUrlOverride;
   const port = process.env.STATS_PORT ?? process.env.PORT ?? '3000';
   return `http://127.0.0.1:${port}`;
+}
+
+/**
+ * Override the stats server base URL (e.g. primary's URL when running as client).
+ * Used when we are a client and got statsPort from primary.
+ */
+export function setStatsBaseUrl(url: string): void {
+  statsBaseUrlOverride = url.replace(/\/$/, '');
+}
+
+/**
+ * Mark the stats server as ready and switch to send + flush queue.
+ * Pass 'server' when this process is the primary (stats server); pass 'client' when we are a client sending to primary.
+ */
+export function markServerReady(role: 'client' | 'server'): void {
+  metricsRole = role === 'server' ? 'primary' : 'client';
+  writeProcessLog(`[MCP] markServerReady(${role}) → metrics will send\n`);
+  metricSender.markServerReady();
 }
 
 /**
@@ -31,55 +57,66 @@ class MetricSender {
 
   /** After server is ready: post becomes send, then flush queue. */
   markServerReady(): void {
+    const role = metricsRole === 'client' ? 'secondary' : metricsRole === 'primary' ? 'primary' : '?';
+    writeProcessLog(`[MCP] MetricSender.markServerReady role=${role} queueLength=${this.messageQueue.length}\n`);
     this.post = this.send;
     this.messageQueue.forEach(this.post);
     this.messageQueue = [];
   }
 
   /** Queue only. After markServerReady(), this is reassigned to send. */
-  post = (payload: MetricPayload): void => {
+  post = (payload: MetricPayload): Promise<void> => {
     this.messageQueue.push(payload);
+    return Promise.resolve();
   };
 
-  /** Actually POST one metric to the stats server. Fire-and-forget. */
-  send = (payload: MetricPayload): void => {
+  /** Actually POST one metric to the stats server. Awaited so process does not exit before send. */
+  send = async (payload: MetricPayload): Promise<void> => {
     const base = getStatsBase();
-    fetch(`${base}/metrics`, {
+    const body = metricsRole ? { ...payload, role: metricsRole } : payload;
+    writeProcessLog(
+      `[MCP] Sending metric operation=${payload.operation} kind=${payload.kind} to ${base}/metrics\n`
+    );
+    await fetch(`${base}/metrics`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(body)
     }).catch(() => {});
   };
 }
 
 const metricSender = new MetricSender();
 
-export function markStatsServerReady(): void {
-  metricSender.markServerReady();
-}
-
 /** Reset queue and sender state (for tests only). */
 export function resetMetricSenderForTesting(): void {
+  statsBaseUrlOverride = null;
+  metricsRole = null;
   metricSender.messageQueue = [];
-  metricSender.post = (payload: MetricPayload): void => {
+  metricSender.post = (payload: MetricPayload): Promise<void> => {
     metricSender.messageQueue.push(payload);
+    return Promise.resolve();
   };
 }
 
-export function postMetric(payload: MetricPayload): void {
-  metricSender.post(payload);
+export async function postMetric(payload: MetricPayload): Promise<void> {
+  const msg = `[MCP] postMetric operation=${payload.operation} kind=${payload.kind}\n`;
+  writeProcessLog(msg);
+  await metricSender.post(payload);
 }
 
 /**
  * Wraps an async handler with metrics: records start/end, duration_ms, status,
- * POSTs to stats server. Plan: "withMetrics(operation)(handler)".
+ * POSTs to stats server with operation and kind (query = user-initiated, event = other).
  */
 export function withMetrics<TArgs extends unknown[], TResult>(
   operation: string,
+  kind: 'query' | 'event',
   handler: (...args: TArgs) => Promise<TResult>
 ): (...args: TArgs) => Promise<TResult> {
   return async (...args: TArgs): Promise<TResult> => {
     const started_at = new Date().toISOString();
+    const startMsg = `[MCP] operation=${operation} kind=${kind} started\n`;
+    writeProcessLog(startMsg);
     let status: 'ok' | 'error' = 'ok';
     let error_code: string | undefined;
     try {
@@ -94,9 +131,10 @@ export function withMetrics<TArgs extends unknown[], TResult>(
       const started = new Date(started_at).getTime();
       const ended = new Date(ended_at).getTime();
       const duration_ms = Math.max(0, ended - started);
-      postMetric({
+      await postMetric({
         instance_id: INSTANCE_ID,
         operation,
+        kind,
         started_at,
         ended_at,
         duration_ms,

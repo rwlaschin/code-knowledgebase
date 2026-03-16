@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { ref } from 'vue';
-import Docs from './docs.vue';
-import { MOCK_STATS_PORT } from '../testConstants';
+import Docs from '../../pages/docs.vue';
+import { MOCK_STATS_PORT } from '../../testConstants';
 
 const mockCwd = '/absolute/project/root';
 const mockPort = String(MOCK_STATS_PORT);

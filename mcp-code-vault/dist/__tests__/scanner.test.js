@@ -2,13 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const mockFindOne = jest.fn();
 const mockUpdateOne = jest.fn().mockResolvedValue(undefined);
+const mockBulkWrite = jest.fn().mockResolvedValue({ ok: 1 });
 jest.mock('../src/db', () => ({
     connectToDatabase: jest.fn().mockResolvedValue({
         collection: jest.fn().mockImplementation((name) => {
             if (name === 'registry')
                 return { findOne: mockFindOne };
             if (name === 'symbols')
-                return { updateOne: mockUpdateOne };
+                return { updateOne: mockUpdateOne, bulkWrite: mockBulkWrite };
             return {};
         })
     })
@@ -21,8 +22,9 @@ jest.mock('../src/analyzer', () => ({
 }));
 const mockReaddirSync = jest.fn();
 const mockStatSync = jest.fn();
+const mockReadFileSync = jest.fn();
 jest.mock('fs', () => ({
-    readFileSync: jest.fn(),
+    readFileSync: mockReadFileSync,
     readdirSync: mockReaddirSync,
     statSync: mockStatSync
 }));
@@ -35,10 +37,12 @@ jest.mock('chokidar', () => ({
     default: { watch: mockWatch }
 }));
 const scanner_1 = require("../src/scanner");
+const defaultStreamProcessor_1 = require("../src/processors/defaultStreamProcessor");
 describe('scanProject', () => {
     beforeEach(() => {
         mockFindOne.mockReset();
         mockUpdateOne.mockClear();
+        mockBulkWrite.mockClear();
         mockReaddirSync.mockReset();
         mockStatSync.mockReset();
     });
@@ -56,7 +60,16 @@ describe('scanProject', () => {
             filesUpdated: 1,
             symbolsFound: 2
         });
-        expect(mockUpdateOne).toHaveBeenCalled();
+        expect(mockBulkWrite).toHaveBeenCalledTimes(1);
+        expect(mockBulkWrite).toHaveBeenCalledWith([
+            expect.objectContaining({
+                updateOne: expect.objectContaining({
+                    filter: { project_key: 'K', file: '/root/a.ts' },
+                    update: { $set: expect.objectContaining({ summary: 'class Foo {} function bar() {}' }) },
+                    upsert: true
+                })
+            })
+        ]);
     });
     it('skips directories and nested files', async () => {
         mockFindOne.mockResolvedValue({ project_key: 'K', root_path: '/root' });
@@ -70,5 +83,75 @@ describe('scanProject', () => {
         const result = await (0, scanner_1.scanProject)('K');
         expect(result.filesScanned).toBe(2);
         expect(result.filesUpdated).toBe(2);
+        expect(mockBulkWrite).toHaveBeenCalledTimes(1);
+    });
+    it('uses ignore manager (node_modules not walked)', async () => {
+        mockFindOne.mockResolvedValue({ project_key: 'K', root_path: '/root' });
+        mockReaddirSync.mockReturnValue(['node_modules', 'a.ts']);
+        mockStatSync
+            .mockReturnValueOnce({ isDirectory: () => true })
+            .mockReturnValueOnce({ isDirectory: () => false });
+        // shouldIgnore is mocked to return true for paths including 'node_modules', so we never recurse into it
+        const result = await (0, scanner_1.scanProject)('K');
+        expect(result.filesScanned).toBe(1);
+        expect(result.filesUpdated).toBe(1);
+    });
+});
+describe('streamProjectChunks', () => {
+    beforeEach(() => {
+        mockFindOne.mockReset();
+        mockReaddirSync.mockReset();
+        mockStatSync.mockReset();
+        mockReadFileSync.mockReset();
+    });
+    it('throws when project not found', async () => {
+        mockFindOne.mockResolvedValue(null);
+        const gen = (0, scanner_1.streamProjectChunks)('unknown', { processor: (0, defaultStreamProcessor_1.createDefaultStreamProcessor)() });
+        await expect(gen.next()).rejects.toThrow('Project not found');
+    });
+    it('yields chunks for a single file via default processor', async () => {
+        mockFindOne.mockResolvedValue({ project_key: 'K', root_path: '/root' });
+        mockReaddirSync.mockReturnValue(['a.ts']);
+        mockStatSync.mockReturnValue({ isDirectory: () => false });
+        const lines = Array.from({ length: 150 }, (_, i) => `line ${i + 1}`).join('\n');
+        mockReadFileSync.mockReturnValue(lines);
+        const chunks = [];
+        for await (const chunk of (0, scanner_1.streamProjectChunks)('K', { processor: (0, defaultStreamProcessor_1.createDefaultStreamProcessor)() })) {
+            chunks.push(chunk);
+        }
+        expect(chunks).toHaveLength(2);
+        expect(chunks[0]).toEqual({ file: '/root/a.ts', startLine: 1, endLine: 100, content: lines.split('\n').slice(0, 100).join('\n') });
+        expect(chunks[1]).toEqual({ file: '/root/a.ts', startLine: 101, endLine: 150, content: lines.split('\n').slice(100, 150).join('\n') });
+    });
+    it('respects chunkLines option on processor', async () => {
+        mockFindOne.mockResolvedValue({ project_key: 'K', root_path: '/root' });
+        mockReaddirSync.mockReturnValue(['a.ts']);
+        mockStatSync.mockReturnValue({ isDirectory: () => false });
+        const lines = Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n');
+        mockReadFileSync.mockReturnValue(lines);
+        const chunks = [];
+        for await (const chunk of (0, scanner_1.streamProjectChunks)('K', { processor: (0, defaultStreamProcessor_1.createDefaultStreamProcessor)({ chunkLines: 10 }) })) {
+            chunks.push({ file: chunk.file, startLine: chunk.startLine, endLine: chunk.endLine });
+        }
+        expect(chunks).toHaveLength(5);
+        expect(chunks[0]).toEqual({ file: '/root/a.ts', startLine: 1, endLine: 10 });
+        expect(chunks[4]).toEqual({ file: '/root/a.ts', startLine: 41, endLine: 50 });
+    });
+    it('skips files that fail to read (processor filters)', async () => {
+        mockFindOne.mockResolvedValue({ project_key: 'K', root_path: '/root' });
+        mockReaddirSync.mockReturnValue(['a.ts', 'b.ts']);
+        mockStatSync.mockReturnValue({ isDirectory: () => false });
+        mockReadFileSync.mockImplementation((path) => {
+            if (path.includes('a.ts'))
+                throw new Error('EACCES');
+            return 'content of b';
+        });
+        const chunks = [];
+        for await (const chunk of (0, scanner_1.streamProjectChunks)('K', { processor: (0, defaultStreamProcessor_1.createDefaultStreamProcessor)() })) {
+            chunks.push({ file: chunk.file, content: chunk.content });
+        }
+        expect(chunks).toHaveLength(1);
+        expect(chunks[0].file).toContain('b.ts');
+        expect(chunks[0].content).toBe('content of b');
     });
 });

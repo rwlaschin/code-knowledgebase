@@ -44,7 +44,7 @@ describe('stdioMode', () => {
     });
   });
 
-  describe('setProcessLogSink and writeProcessLog', () => {
+  describe('setProcessLogSink, addProcessLogSink and writeProcessLog', () => {
     it('writeProcessLog calls sink when sink is set (stdio mode or not; we only avoid stdout/stderr)', () => {
       jest.isolateModules(() => {
         const { setProcessLogSink, writeProcessLog } = require('../src/stdioMode');
@@ -52,6 +52,18 @@ describe('stdioMode', () => {
         setProcessLogSink(sink);
         writeProcessLog('msg');
         expect(sink).toHaveBeenCalledWith('msg');
+      });
+    });
+    it('writeProcessLog calls all sinks (setProcessLogSink + addProcessLogSink)', () => {
+      jest.isolateModules(() => {
+        const { setProcessLogSink, addProcessLogSink, writeProcessLog } = require('../src/stdioMode');
+        const file = jest.fn();
+        const stderr = jest.fn();
+        setProcessLogSink(file);
+        addProcessLogSink(stderr);
+        writeProcessLog('line\n');
+        expect(file).toHaveBeenCalledWith('line\n');
+        expect(stderr).toHaveBeenCalledWith('line\n');
       });
     });
   });

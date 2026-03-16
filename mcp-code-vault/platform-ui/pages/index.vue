@@ -18,33 +18,23 @@
       </div>
     </div>
 
-    <!-- Live stream not connected. Only show after we've actually had an error, not on first load. -->
+    <!-- Shown when stream is not connected (connecting, error, or disconnected). -->
     <div
-      v-if="streamStatus === 'error' && hasStreamErrorOccurred"
-      class="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 mb-8 text-amber-200/90"
+      v-if="streamStatus !== 'connected'"
+      class="waiting-banner rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-8 text-amber-200/90"
     >
-      <p class="font-medium">Live stream not connected</p>
-      <p class="text-sm mt-1 opacity-90">
-        The stats live stream (heartbeats, metrics) could not connect. This is <strong>not</strong> discovery — if you see "Registered MCPs" with server(s) below, backends registered successfully. The stream connects this page to the stats server over Socket.IO.
-      </p>
-      <p v-if="publicConfig.useStatsProxy" class="text-sm mt-1 opacity-90">
-        The UI proxies <code class="px-1.5 py-0.5 rounded bg-black/30">/socket.io</code> to the port <code class="px-1.5 py-0.5 rounded bg-black/30">STATS_PORT</code> (default 3000). Ensure the backend is running on that port, e.g. <code class="px-1.5 py-0.5 rounded bg-black/30">PORT={{ backendPortForCopy }} npm run dev</code> in mcp-code-vault. Check the stream log below and browser Network → WS for errors.
-      </p>
-      <p v-else class="text-sm mt-1 opacity-90">
-        Stream target: <code class="px-1.5 py-0.5 rounded bg-black/30">{{ statsBase }}</code>. Ensure the stats server is running on that port. Check the stream log below and browser Network → WS for errors.
-      </p>
+      <p class="font-medium">Waiting for connection to MCP server.</p>
     </div>
 
     <!-- CHARTS (on top as before) -->
     <section class="mb-10 min-w-0" aria-label="Charts">
-      <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-widest mb-6">Charts</h2>
-      <div class="flex gap-4 w-full flex-wrap min-w-0">
-        <GlassCard class="mb-8 flex-[1_1_60%] min-w-0">
-          <div class="mb-6">
+      <div class="flex gap-4 w-full flex-wrap min-w-0 items-stretch">
+        <GlassCard class="mb-8 flex-[1_1_60%] min-w-0 min-h-[400px] flex flex-col">
+          <div class="mb-6 shrink-0">
             <h3 class="text-xl font-bold text-white">Time series</h3>
           </div>
-          <ClientOnly>
-            <div class="min-w-0 w-full">
+          <ClientOnly class="min-h-0 flex-1 flex flex-col">
+            <div class="min-w-0 w-full flex-1 min-h-[320px]">
               <apexchart
                 v-if="timeChartOptions"
                 type="area"
@@ -58,22 +48,22 @@
             </template>
           </ClientOnly>
         </GlassCard>
-        <GlassCard class="mb-8 flex-[1_1_min(280px,100%)] min-w-0">
-          <div class="mb-6">
+        <GlassCard class="mb-8 flex-[1_1_min(280px,100%)] min-w-0 min-h-[400px] flex flex-col">
+          <div class="mb-6 shrink-0">
             <h3 class="text-xl font-bold text-white">Requests per minute</h3>
           </div>
-          <ClientOnly>
-            <div class="min-w-0 w-full">
+          <ClientOnly class="min-h-0 flex-1 flex flex-col">
+            <div class="min-w-0 w-full flex-1 min-h-[320px]">
               <apexchart
                 v-if="rpmChartOptions"
                 type="bar"
-                height="280"
+                height="320"
                 :options="rpmChartOptions"
                 :series="rpmChartSeries"
               />
             </div>
             <template #fallback>
-              <div class="h-[280px] flex items-center justify-center text-gray-500">Loading chart…</div>
+              <div class="h-[320px] flex items-center justify-center text-gray-500">Loading chart…</div>
             </template>
           </ClientOnly>
         </GlassCard>
@@ -98,7 +88,7 @@
     </div>
 
     <!-- Response time & token percentiles -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
       <GlassCard>
         <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Response time (ms)</p>
         <div class="flex flex-wrap gap-4">
@@ -123,24 +113,57 @@
           <div><span class="text-gray-500 text-sm">p99</span><span class="ml-2 font-mono font-bold text-white">{{ stats.tokensOutP99 }}</span></div>
         </div>
       </GlassCard>
+      <GlassCard>
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Thinking tokens</p>
+        <div class="flex flex-wrap gap-4">
+          <div><span class="text-gray-500 text-sm">p50</span><span class="ml-2 font-mono font-bold text-white">{{ stats.tokensThinkingP50 }}</span></div>
+          <div><span class="text-gray-500 text-sm">p85</span><span class="ml-2 font-mono font-bold text-white">{{ stats.tokensThinkingP85 }}</span></div>
+          <div><span class="text-gray-500 text-sm">p99</span><span class="ml-2 font-mono font-bold text-white">{{ stats.tokensThinkingP99 }}</span></div>
+        </div>
+      </GlassCard>
     </div>
 
-    <!-- Registered MCPs (discovery): poll so we show when MCPs register. -->
+    <!-- Registered MCPs (discovery + stream): primary vs secondary with distinct look. -->
     <ClientOnly>
       <section class="mb-6" aria-label="Registered MCPs">
         <h2 class="text-lg font-semibold text-gray-400 uppercase tracking-widest mb-2">
-          Registered MCPs ({{ discoveryServers.length }} {{ discoveryServers.length === 1 ? 'server' : 'servers' }})
+          Registered MCPs
         </h2>
-        <p v-if="discoveryServers.length === 0" class="text-sm text-gray-400">
-          No MCPs registered yet. They register when they receive the UI broadcast on UDP 9255.
-        </p>
+        <div v-if="discoveryServers.length === 0 && secondariesFromStream.length === 0" class="flex flex-wrap gap-5" aria-busy="true" aria-label="Waiting for MCPs to register">
+          <span class="h-8 w-24 rounded-lg border border-white/10 bg-violet-500/[0.08] animate-pulse" aria-hidden="true" />
+          <span class="h-8 w-24 rounded-lg border border-white/10 bg-violet-500/[0.08] animate-pulse" style="animation-delay: 500ms;" aria-hidden="true" />
+          <span class="h-8 w-24 rounded-lg border border-white/10 bg-violet-500/[0.08] animate-pulse" style="animation-delay: 700ms;" aria-hidden="true" />
+        </div>
         <div v-else class="flex flex-wrap gap-2">
+          <!-- Primary: from discovery (port matches stream) -->
+          <template v-for="s in discoveryServers" :key="`primary-${s.projectName}:${s.port}`">
+            <span
+              v-if="primaryPortFromStream != null && s.port === primaryPortFromStream"
+              class="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300"
+              title="Primary"
+            >
+              <Icon name="lucide:server" class="size-5 shrink-0" aria-hidden="true" />
+              <span class="font-mono text-sm">{{ s.projectName }}<span class="text-amber-400/70">:</span>{{ s.port }}</span>
+            </span>
+          </template>
+          <!-- Discovery servers that are not the primary (no stream role yet) -->
           <span
             v-for="s in discoveryServers"
-            :key="`${s.projectName}:${s.port}`"
+            :key="`reg-${s.projectName}:${s.port}`"
+            v-show="primaryPortFromStream == null || s.port !== primaryPortFromStream"
             class="inline-flex items-center rounded-lg px-3 py-1.5 text-sm font-mono bg-white/5 border border-white/10 text-gray-300"
           >
             {{ s.projectName }}<span class="text-gray-500">:</span>{{ s.port }}
+          </span>
+          <!-- Secondaries: from stream (connected to primary) -->
+          <span
+            v-for="s in secondariesFromStream"
+            :key="`secondary-${s.projectName}:${s.port}`"
+            class="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 bg-sky-500/20 border border-sky-400/40 text-sky-300"
+            title="Secondary"
+          >
+            <Icon name="lucide:radio" class="size-5 shrink-0" aria-hidden="true" />
+            <span class="font-mono text-sm">{{ s.projectName }}<span class="text-sky-400/70">:</span>{{ s.port }}</span>
           </span>
         </div>
       </section>
@@ -162,7 +185,7 @@
               </thead>
               <tbody class="text-gray-300">
               <tr v-if="displayRows.length === 0" class="border-b border-white/5">
-                <td colspan="3" class="px-4 py-6 text-center text-gray-500">No events yet. Backend sends connected, heartbeat, and metric over Socket.IO.</td>
+                <td colspan="3" class="px-4 py-6 text-center text-gray-500">Logs will populate here as they are received.</td>
               </tr>
               <tr
                 v-for="(row, i) in displayRows"
@@ -181,8 +204,8 @@
                     {{ row.count! > 99 ? '99+' : row.count }}
                   </button>
                   <span
-                    class="rounded-full px-2 py-0.5 text-xs font-medium inline-block"
-                    :class="row.event === 'connected' ? 'bg-emerald-500/30 text-emerald-200' : row.event === 'heartbeat' ? 'bg-violet-500/30 text-violet-200' : 'bg-white/10 text-gray-200'"
+                    class="rounded-full pl-1.5 pr-2 py-0.5 text-xs font-medium inline-flex items-center gap-1"
+                    :class="eventBadgeClass(row.event)"
                   >
                     {{ row.event }}
                   </span>
@@ -215,7 +238,7 @@
                 </thead>
                 <tbody class="text-gray-300">
                   <tr class="border-b border-white/5">
-                    <td colspan="3" class="px-4 py-6 text-center text-gray-500">No events yet. Backend sends connected, heartbeat, and metric over Socket.IO.</td>
+                    <td colspan="3" class="px-4 py-6 text-center text-gray-500">Events will populate here as they are received.</td>
                   </tr>
                 </tbody>
               </table>
@@ -232,7 +255,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRuntimeConfig } from 'nuxt/app'
 import type { ApexOptions } from 'apexcharts'
 
@@ -256,9 +279,22 @@ const statsBase = computed(() => {
   if (s) return `http://${host}:${s}`
   return `http://${host}:3000`
 })
-/** Port from statsBase for error copy (e.g. 3000). When using proxy we don't have a URL so show default. */
+/** Registered MCPs (discovery); polled so list updates when MCPs register. */
+const discoveryServers = ref<{ projectName: string; port: number }[]>([])
+/** Stream target URL: only from registered MCPs (broadcast). No fallback to config — wait for registration. */
+const streamTargetUrl = computed(() => {
+  if (typeof window === 'undefined') return ''
+  if (publicConfig.useStatsProxy) return statsBase.value
+  const servers = discoveryServers.value
+  if (servers.length > 0) {
+    const host = (window.location.hostname === 'localhost' || window.location.hostname === '::1') ? '127.0.0.1' : window.location.hostname
+    return `http://${host}:${servers[0].port}`
+  }
+  return ''
+})
+/** Port from stream target (discovery or config) for error copy. When using proxy we don't have a URL so show default. */
 const backendPortForCopy = computed(() => {
-  const b = statsBase.value
+  const b = streamTargetUrl.value || statsBase.value
   if (!b) return '3000'
   try {
     const u = new URL(b)
@@ -272,7 +308,7 @@ const streamStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>(
 const streamEventTime = ref('')
 /** Raw stream events (newest first); pushStreamEvent appends here. */
 const streamEventsRaw = ref<{ event: string; time: string; data: string }[]>([])
-/** Grouped rows: consecutive heartbeats as one row with count + latest time/data; rawEvents for expand. */
+/** Grouped rows: consecutive heartbeats as one row with count + newest time/data; rawEvents for expand. */
 const streamEventRows = computed(() => {
   const raw = streamEventsRaw.value
   if (raw.length === 0) return []
@@ -286,18 +322,16 @@ const streamEventRows = computed(() => {
       continue
     }
     const group: { time: string; data: string }[] = []
-    let latestTime = raw[i].time
-    let latestData = raw[i].data
     while (i < raw.length && raw[i].event === 'heartbeat') {
       group.push({ time: raw[i].time, data: raw[i].data })
-      latestTime = raw[i].time
-      latestData = raw[i].data
       i += 1
     }
+    // raw is newest-first, so group[0] is the newest heartbeat
+    const newest = group[0]
     out.push({
       event: 'heartbeat',
-      time: latestTime,
-      data: latestData,
+      time: newest.time,
+      data: newest.data,
       ...(group.length > 1 ? { count: group.length, rawEvents: group } : {})
     })
   }
@@ -349,8 +383,10 @@ const hasReceivedHeartbeat = ref(false)
 /** Only show the stream error banner after we've actually had a connect_error or disconnect (not on first paint). */
 const hasStreamErrorOccurred = ref(false)
 
-/** Registered MCPs (discovery); polled so list updates when MCPs register. */
-const discoveryServers = ref<{ projectName: string; port: number }[]>([])
+/** Primary port from stream (primary:identified); used to show Primary badge in Registered MCPs. */
+const primaryPortFromStream = ref<number | null>(null)
+/** Secondaries from stream (secondary:connected); shown in Registered MCPs with Secondary style. */
+const secondariesFromStream = ref<{ port: number; projectName: string }[]>([])
 let discoveryPollTimer: ReturnType<typeof setInterval> | null = null
 
 async function fetchDiscoveryServers() {
@@ -387,6 +423,7 @@ interface StreamMetric {
   _id?: string
   instance_id: string
   operation: string
+  kind?: 'query' | 'event'
   started_at: string
   ended_at: string
   duration_ms: number
@@ -424,7 +461,7 @@ const connectionDotClass = computed(() => {
 // Scorecards and stats derived only from streamed metrics (no fake data)
 const mcpScorecards = computed(() => {
   const m = metricsFromStream.value
-  const queries = m.filter((x) => x.operation === 'query').length
+  const queries = m.filter((x) => (x.kind ?? 'event') === 'query').length
   const docsReturned = m.reduce((sum, x) => sum + (Number((x.metadata as { documents?: number })?.documents) || 0), 0)
   const filesRead = m.filter((x) => x.operation?.toLowerCase().includes('file') || x.operation === 'get_file_summary').length
   const toolCalls = m.filter((x) => x.operation?.toLowerCase().includes('tool') || x.operation === 'tool_call').length
@@ -433,7 +470,7 @@ const mcpScorecards = computed(() => {
   const totalWithCache = m.length
   const cacheRate = totalWithCache > 0 ? Math.round((cacheHits / totalWithCache) * 100) : null
   return [
-    { label: 'Queries', value: m.length > 0 ? String(queries) : '—', sublabel: 'Total' },
+    { label: 'Queries', value: m.length > 0 ? String(queries) : '—', sublabel: 'User-initiated' },
     { label: 'Documents returned', value: m.length > 0 ? String(docsReturned) : '—', sublabel: '' },
     { label: 'Files read', value: m.length > 0 ? String(filesRead) : '—', sublabel: '' },
     { label: 'Tool calls', value: m.length > 0 ? String(toolCalls) : '—', sublabel: '' },
@@ -451,7 +488,10 @@ const stats = reactive({
   tokensInP99: '—',
   tokensOutP50: '—',
   tokensOutP85: '—',
-  tokensOutP99: '—'
+  tokensOutP99: '—',
+  tokensThinkingP50: '—',
+  tokensThinkingP85: '—',
+  tokensThinkingP99: '—'
 })
 
 function updateStatsFromStream() {
@@ -464,6 +504,7 @@ function updateStatsFromStream() {
   stats.responseTimeP99 = String(Math.round(p(99)))
   const tokensIn = m.map((x) => Number((x.metadata as { tokens_in?: number })?.tokens_in) ?? 0).filter(Boolean)
   const tokensOut = m.map((x) => Number((x.metadata as { tokens_out?: number })?.tokens_out) ?? 0).filter(Boolean)
+  const tokensThinking = m.map((x) => Number((x.metadata as { tokens_thinking?: number })?.tokens_thinking) ?? 0).filter(Boolean)
   if (tokensIn.length) {
     const sorted = [...tokensIn].sort((a, b) => a - b)
     const pct = (q: number) => sorted[Math.floor((q / 100) * sorted.length)] ?? sorted[sorted.length - 1]
@@ -478,9 +519,16 @@ function updateStatsFromStream() {
     stats.tokensOutP85 = String(pct(85))
     stats.tokensOutP99 = String(pct(99))
   }
+  if (tokensThinking.length) {
+    const sorted = [...tokensThinking].sort((a, b) => a - b)
+    const pct = (q: number) => sorted[Math.floor((q / 100) * sorted.length)] ?? sorted[sorted.length - 1]
+    stats.tokensThinkingP50 = String(pct(50))
+    stats.tokensThinkingP85 = String(pct(85))
+    stats.tokensThinkingP99 = String(pct(99))
+  }
 }
 
-// Charts: data only from stream (no fake series)
+// Charts: data only from stream. vue3-apexcharts watches series and calls updateSeries() in place.
 const last7Days = computed(() =>
   Array.from({ length: 7 }, (_, i) => {
     const d = new Date()
@@ -489,38 +537,29 @@ const last7Days = computed(() =>
   })
 )
 const timeChartSeries = computed(() => {
-  const m = metricsFromStream.value
-  const isQuery = (x: { operation: string }) => x.operation === 'query'
-  const byDay = last7Days.value.map((_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    d.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(d)
-    dayEnd.setDate(dayEnd.getDate() + 1)
-    return m.filter((x) => {
-      const t = new Date(x.started_at).getTime()
-      return t >= d.getTime() && t < dayEnd.getTime()
-    }).length
+  void streamEventsRaw.value
+  const metrics = metricsFromStream.value
+  const days = last7Days.value.map((_, i) => {
+    const start = new Date()
+    start.setDate(start.getDate() - (6 - i))
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(start)
+    end.setDate(end.getDate() + 1)
+    return { start: start.getTime(), end: end.getTime() }
   })
-  const byDayQueries = last7Days.value.map((_, i) => {
-    const d = new Date()
-    d.setDate(d.getDate() - (6 - i))
-    d.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(d)
-    dayEnd.setDate(dayEnd.getDate() + 1)
-    return m.filter((x) => {
-      if (!isQuery(x)) return false
-      const t = new Date(x.started_at).getTime()
-      return t >= d.getTime() && t < dayEnd.getTime()
-    }).length
-  })
+  const count = (fn: (x: { started_at: string; kind?: string }) => boolean) =>
+    days.map(({ start, end }) => metrics.filter((x) => { const t = new Date(x.started_at).getTime(); return fn(x) && t >= start && t < end }).length)
+  const queries = count((x) => (x.kind ?? 'event') === 'query')
+  const events = count((x) => (x.kind ?? 'event') === 'event')
+  const activeProjectsCount = discoveryServers.value.length
   return [
-    { name: 'Active projects', data: byDay.map(() => 0) },
-    { name: 'Event count', data: byDay },
-    { name: 'File refreshes', data: byDay.map(() => 0) },
-    { name: 'Queries', data: byDayQueries }
+    { name: 'Active projects', data: queries.map(() => activeProjectsCount) },
+    { name: 'Event count', data: events },
+    { name: 'File ops', data: queries.map(() => 0) }, // TODO: per-day file watcher ops when backend provides
+    { name: 'Queries', data: queries }
   ]
 })
+
 const timeChartOptions = ref<ApexOptions | null>({
   chart: { type: 'area', background: 'transparent', toolbar: { show: false }, zoom: { enabled: false }, fontFamily: 'inherit' },
   theme: { mode: 'dark' },
@@ -529,8 +568,8 @@ const timeChartOptions = ref<ApexOptions | null>({
   fill: { type: 'gradient', gradient: { opacityFrom: 0.35, opacityTo: 0.04, shadeIntensity: 1 } },
   dataLabels: { enabled: false },
   xaxis: { categories: last7Days.value, labels: { style: { colors: '#9CA3AF', fontSize: '11px' } }, axisBorder: { color: 'rgba(255,255,255,0.08)' } },
-  yaxis: { labels: { style: { colors: '#9CA3AF', fontSize: '11px' } }, axisBorder: { show: false } },
-  grid: { borderColor: 'rgba(255,255,255,0.06)', xaxis: { lines: { show: false } }, yaxis: { lines: { show: true } } },
+  yaxis: { min: 0, labels: { style: { colors: '#9CA3AF', fontSize: '11px' } }, axisBorder: { show: false } },
+  grid: { borderColor: 'rgba(255,255,255,0.06)', xaxis: { lines: { show: false } }, yaxis: { lines: { show: true } }, padding: { top: 12, right: 12, bottom: 4, left: 4 } },
   legend: { labels: { colors: '#E5E7EB' }, position: 'top', horizontalAlign: 'right', fontSize: '12px' },
   tooltip: { theme: 'dark', x: { format: 'dd MMM' } }
 })
@@ -559,13 +598,24 @@ const rpmChartOptions = ref<ApexOptions | null>({
   plotOptions: { bar: { borderRadius: 8, columnWidth: '65%', distributed: false } },
   dataLabels: { enabled: false },
   xaxis: { categories: rpmCategories, labels: { style: { colors: '#9CA3AF', fontSize: '11px' } }, axisBorder: { color: 'rgba(255,255,255,0.08)' } },
-  yaxis: { labels: { style: { colors: '#9CA3AF', fontSize: '11px' } }, axisBorder: { show: false } },
-  grid: { borderColor: 'rgba(255,255,255,0.06)' },
+  yaxis: { min: 0, labels: { style: { colors: '#9CA3AF', fontSize: '11px' } }, axisBorder: { show: false } },
+  grid: { borderColor: 'rgba(255,255,255,0.06)', padding: { top: 8, right: 8, bottom: -30, left: 0 } },
   legend: { show: false },
   tooltip: { theme: 'dark' }
 })
 
 const STREAM_EVENT_CAP = 200
+
+function eventBadgeClass(event: string): string {
+  switch (event) {
+    case 'connected':
+      return 'bg-emerald-500/30 text-emerald-200'
+    case 'heartbeat':
+      return 'bg-violet-500/30 text-violet-200'
+    default:
+      return 'bg-white/10 text-gray-200'
+  }
+}
 
 function pushStreamEvent(data: string, eventType: string) {
   const time = new Date().toLocaleString()
@@ -636,19 +686,14 @@ function onStreamEvent() {
   if (streamStatus.value === 'connected') scheduleStreamDeadCheck()
 }
 
-onMounted(async () => {
-  await fetchDiscoveryServers()
-  discoveryPollTimer = setInterval(fetchDiscoveryServers, 5000)
-
-  const baseUrl = statsBase.value
-  if (!baseUrl && !publicConfig.useStatsProxy) {
-    addStreamLog('No stats URL (set NUXT_PUBLIC_UI_PORT or use localhost). Socket.IO not started.')
-    streamStatus.value = 'error'
-    return
+async function connectStream(baseUrl: string) {
+  if (socket) {
+    socket.disconnect()
+    socket = null
   }
+  const base = baseUrl ? baseUrl.replace(/\/$/, '') : ''
   streamStatus.value = 'connecting'
   hasReceivedHeartbeat.value = false
-  const base = baseUrl ? baseUrl.replace(/\/$/, '') : ''
   const { io } = await import('socket.io-client')
   addStreamLog(`Socket.IO connecting to ${base || window.location.origin}`)
   socket = io(base || undefined, { autoConnect: true, reconnection: true })
@@ -656,13 +701,15 @@ onMounted(async () => {
     addStreamLog('Socket.IO connect')
     streamStatus.value = 'connecting'
   })
-  socket.on('connect_error', (err: Error) => {
+  socket.on('connect_error', (...args: unknown[]) => {
+    const err = args[0] as Error
     hasStreamErrorOccurred.value = true
-    addStreamLog(`Socket.IO connect_error: ${err.message}. ${base ? `Is the backend running on ${base}?` : 'Is the stats server running? (STATS_PORT)'}`)
+    addStreamLog(`Socket.IO connect_error: ${err?.message ?? String(args)}. ${base ? `Is the backend running on ${base}?` : 'Is the stats server running? (STATS_PORT)'}`)
     streamStatus.value = 'error'
     hasReceivedHeartbeat.value = false
   })
-  socket.on('disconnect', (reason: string) => {
+  socket.on('disconnect', (...args: unknown[]) => {
+    const reason = (args[0] as string) ?? 'unknown'
     hasStreamErrorOccurred.value = true
     addStreamLog(`Socket.IO disconnect: ${reason}`)
     if (streamDeadTimer) clearTimeout(streamDeadTimer)
@@ -685,7 +732,6 @@ onMounted(async () => {
       onStreamEvent()
     }
     const str = typeof data === 'string' ? data : JSON.stringify(data)
-    addStreamLog(`event=heartbeat ${str.slice(0, 60)}`)
     pushStreamEvent(str, 'heartbeat')
   })
   socket.on('metric', (data: unknown) => {
@@ -694,6 +740,64 @@ onMounted(async () => {
     addStreamLog(`event=metric ${str.slice(0, 80)}`)
     pushStreamEvent(str, 'metric')
     onMetric(str)
+  })
+  socket.on('primary:identified', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=primary:identified ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Primary identified')
+    try {
+      const payload = JSON.parse(str) as { port?: number }
+      if (typeof payload.port === 'number') primaryPortFromStream.value = payload.port
+    } catch {
+      // ignore
+    }
+  })
+  socket.on('secondary:connected', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=secondary:connected ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Secondary connected')
+    try {
+      const payload = JSON.parse(str) as { port?: number; projectName?: string }
+      if (typeof payload.port === 'number' && typeof payload.projectName === 'string') {
+        const next = [...secondariesFromStream.value]
+        if (!next.some((s) => s.port === payload.port && s.projectName === payload.projectName)) {
+          next.push({ port: payload.port, projectName: payload.projectName })
+          secondariesFromStream.value = next
+        }
+      }
+    } catch {
+      // ignore
+    }
+  })
+  socket.on('secondary:disconnected', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=secondary:disconnected ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Secondary disconnected')
+    try {
+      const payload = JSON.parse(str) as { port?: number; projectName?: string }
+      if (typeof payload.port === 'number' && typeof payload.projectName === 'string') {
+        secondariesFromStream.value = secondariesFromStream.value.filter(
+          (s) => !(s.port === payload.port && s.projectName === payload.projectName)
+        )
+      }
+    } catch {
+      // ignore
+    }
+  })
+  socket.on('primary:disconnected', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=primary:disconnected ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Primary disconnected')
+  })
+  socket.on('query:received', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=query:received ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Query received')
   })
   socket.on('scan:progress', (data: unknown) => {
     try {
@@ -705,8 +809,29 @@ onMounted(async () => {
       // ignore
     }
   })
+}
+
+onMounted(async () => {
+  await fetchDiscoveryServers()
+  discoveryPollTimer = setInterval(fetchDiscoveryServers, 5000)
+
+  const baseUrl = streamTargetUrl.value
+  if (!baseUrl && !publicConfig.useStatsProxy) {
+    addStreamLog('Waiting for MCP to register.')
+    streamStatus.value = 'disconnected'
+    fetchScanProgress()
+    return
+  }
+  if (baseUrl) await connectStream(baseUrl)
   fetchScanProgress()
 })
+
+watch(discoveryServers, (servers, prev) => {
+  if (prev?.length === 0 && servers.length > 0 && (streamStatus.value === 'error' || streamStatus.value === 'disconnected')) {
+    const url = streamTargetUrl.value
+    if (url) connectStream(url)
+  }
+}, { deep: true })
 
 async function fetchScanProgress() {
   try {
@@ -730,3 +855,14 @@ onUnmounted(() => {
   socket = null
 })
 </script>
+
+<style scoped>
+.waiting-banner {
+  animation: waiting-pulse 2.5s ease-in-out infinite;
+}
+@keyframes waiting-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.82; }
+}
+
+</style>

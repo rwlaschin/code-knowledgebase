@@ -113,12 +113,12 @@
           </dl>
         </section>
 
-        <section id="tool-config" class="scroll-mt-28 docs-subsection">
-          <h3 class="docs-subsection-title"><code class="text-accent font-mono font-normal">config</code></h3>
+        <section id="tool-settings" class="scroll-mt-28 docs-subsection">
+          <h3 class="docs-subsection-title"><code class="text-accent font-mono font-normal">settings</code></h3>
           <dl class="space-y-3 text-gray-400">
             <div>
               <dt class="font-medium text-gray-300 mb-1">Description</dt>
-              <dd>Returns the current server setup: working directory, port, and a ready-to-paste MCP configuration snippet for Cursor. Use when you need to copy the exact config or confirm where the server is running.</dd>
+              <dd>Returns the current server settings and the MCP snippet for Cursor — the same content as the Config page in the Platform UI. Read-only.</dd>
             </div>
             <div>
               <dt class="font-medium text-gray-300 mb-1">Parameters</dt>
@@ -126,7 +126,25 @@
             </div>
             <div>
               <dt class="font-medium text-gray-300 mb-1">Returns</dt>
-              <dd>Plain text containing <code class="px-1 rounded bg-white/10">cwd</code>, <code class="px-1 rounded bg-white/10">port</code>, and a JSON config block.</dd>
+              <dd>Plain text: <strong>Code-vault config</strong> (cwd, port), then <strong>MCP snippet (for Cursor)</strong> — a ready-to-paste JSON block for Cursor MCP config.</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="tool-config" class="scroll-mt-28 docs-subsection">
+          <h3 class="docs-subsection-title"><code class="text-accent font-mono font-normal">config</code></h3>
+          <dl class="space-y-3 text-gray-400">
+            <div>
+              <dt class="font-medium text-gray-300 mb-1">Description</dt>
+              <dd>Sets server settings. Pass <code class="px-1 rounded bg-white/10">cwd</code> and/or <code class="px-1 rounded bg-white/10">port</code> to update the working directory or stats port the server reports and uses. Use when you need to correct cwd or port at runtime.</dd>
+            </div>
+            <div>
+              <dt class="font-medium text-gray-300 mb-1">Parameters</dt>
+              <dd>Optional: <code class="px-1 rounded bg-white/10">cwd</code> (string), <code class="px-1 rounded bg-white/10">port</code> (string). Pass only the keys you want to update.</dd>
+            </div>
+            <div>
+              <dt class="font-medium text-gray-300 mb-1">Returns</dt>
+              <dd>Plain text confirming what was set (e.g. <code class="px-1 rounded bg-white/10">Set: cwd=/path, port=3000</code>) or a message if no settings were provided.</dd>
             </div>
           </dl>
         </section>
@@ -183,7 +201,7 @@ import { useRouter, useRoute } from 'vue-router'
 const router = useRouter()
 const route = useRoute()
 
-const sectionIds = ['quick-start', 'setting-up-mcp-cursor', 'using-the-mcp', 'tool-ping', 'tool-config', 'user-interface', 'configuration']
+const sectionIds = ['quick-start', 'setting-up-mcp-cursor', 'using-the-mcp', 'tool-ping', 'tool-settings', 'tool-config', 'user-interface', 'configuration']
 const validSectionIds = new Set(sectionIds)
 
 function getHashValue(): string {

@@ -14,5 +14,6 @@ export default defineEventHandler(async (event) => {
     ? String(body.projectName).trim()
     : `mcp-${port}`
   register(label, port)
+  console.info(`[discovery] MCP server registered: ${label} @ port ${port}`)
   return { ok: true }
 })

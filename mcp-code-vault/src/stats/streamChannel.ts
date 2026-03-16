@@ -10,9 +10,19 @@ type StreamMessage = { event: string; data: string };
 type Subscriber = (msg: StreamMessage | null) => void;
 const subscribers = new Set<Subscriber>();
 let io: SocketIOServer | null = null;
+let streamRole: 'primary' | 'client' | null = null;
 
 export function setSocketIO(socketServer: SocketIOServer): void {
   io = socketServer;
+}
+
+/** Set when this process is the primary (has Socket.IO and stats server). Used so query/metric events can include source. */
+export function setStreamRole(role: 'primary' | 'client'): void {
+  streamRole = role;
+}
+
+export function getStreamRole(): 'primary' | 'client' | null {
+  return streamRole;
 }
 
 /** Push a metric (or any event) to the stream. Every connected client receives it. */

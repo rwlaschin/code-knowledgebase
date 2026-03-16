@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { APP_TITLE } from './constants';
+import { APP_TITLE } from '../../lib/constants';
 
 describe('constants', () => {
   it('APP_TITLE is set', () => {
