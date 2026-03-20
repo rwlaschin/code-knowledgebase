@@ -4,6 +4,19 @@ jest.mock('../src/db/mongoose', () => ({
 jest.mock('../src/db/seed', () => ({
   runSeed: jest.fn().mockResolvedValue(undefined)
 }));
+jest.mock('../src/db/ensureProject', () => ({
+  ensureProjectFromConfig: jest.fn().mockResolvedValue('unchanged' as const)
+}));
+
+jest.mock('../src/db/projectDb', () => ({
+  ...jest.requireActual('../src/db/projectDb'),
+  ensureProjectCollections: jest.fn().mockResolvedValue(undefined)
+}));
+
+jest.mock('../src/stats/metricsClient', () => ({
+  ...jest.requireActual('../src/stats/metricsClient'),
+  postMetric: jest.fn().mockResolvedValue(undefined)
+}));
 
 const mockFind = jest.fn();
 jest.mock('../src/db/models/Project', () => ({

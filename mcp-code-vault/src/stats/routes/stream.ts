@@ -4,7 +4,7 @@ import { streamToUI } from '../streamChannel';
 
 export async function streamRoutes(fastify: FastifyInstance) {
   fastify.get('/metrics/stream', async (_request, reply) => {
-    writeProcessLog('[BACKEND] GET /metrics/stream client connected\n');
+    writeProcessLog('[MCP] GET /metrics/stream client connected\n');
     reply.sse(streamToUI());
   });
 }

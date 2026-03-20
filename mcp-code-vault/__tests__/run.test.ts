@@ -28,7 +28,7 @@ describe('run.ts', () => {
       // may throw or exit
     }
 
-    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[backend] FATAL'));
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining('[mcp] FATAL'));
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
     writeSpy.mockRestore();

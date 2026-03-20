@@ -59,7 +59,8 @@ describe('metricsClient', () => {
           instance_id: 'id',
           operation: 'op',
           status: 'ok',
-          duration_ms: 1
+          duration_ms: 1,
+          metadata: { projectKey: 'default' }
         });
       });
     });
@@ -142,6 +143,7 @@ describe('metricsClient', () => {
       const body = JSON.parse(fetchCalls[0].init.body as string);
       expect(body.operation).toBe('testOp');
       expect(body.status).toBe('ok');
+      expect(body.metadata).toEqual({ projectKey: 'default' });
     });
     it('rethrows and POSTs metric with status error when handler throws', async () => {
       process.env.PORT = '4001';
@@ -157,6 +159,7 @@ describe('metricsClient', () => {
       expect(body.operation).toBe('errOp');
       expect(body.status).toBe('error');
       expect(body.error_code).toBe('fail');
+      expect(body.metadata).toEqual({ projectKey: 'default' });
     });
   });
 });

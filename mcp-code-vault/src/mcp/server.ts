@@ -10,8 +10,8 @@ function getInstructions(): string {
 
 Tools:
 - \`ping\`: verify connection (returns "pong").
-- \`settings\`: return current settings (cwd, port). Read-only.
-- \`config\`: set settings (cwd, port). Pass cwd and/or port to update.
+- \`settings\`: return current settings (workingDirectory, cwd, port). Read-only.
+- \`config\`: set settings (workingDirectory, cwd, port). Pass workingDirectory and/or port to update.
 
 Doc: See the Docs page in the Platform UI (e.g. http://localhost:2999/docs) for setup, MCP in Cursor, and configuration.
 Use \`tools/list\` to list tools.`;
@@ -52,23 +52,30 @@ export function createMcpServerApp(): McpServer {
   server.registerTool(
     'settings',
     {
-      description: 'Return current server settings (cwd, port). Read-only.',
+      description: 'Return current server settings (workingDirectory, cwd, port). Read-only.',
       inputSchema: {}
     },
     settingsHandler as (args: unknown, extra: unknown) => Promise<{ content: { type: 'text'; text: string }[] }>
   );
 
   const configHandler = withMetrics('config', 'query', async (args: unknown) => {
-    const input = (args && typeof args === 'object' ? args : {}) as { cwd?: string; port?: string };
+    const input = (args && typeof args === 'object' ? args : {}) as {
+      cwd?: string;
+      workingDirectory?: string;
+      port?: string;
+    };
     const { set } = applyConfig(input);
-    const text = set.length > 0 ? `Set: ${set.join(', ')}` : 'No settings provided. Pass cwd and/or port to set.';
+    const text =
+      set.length > 0
+        ? `Set: ${set.join(', ')}`
+        : 'No settings provided. Pass workingDirectory (or cwd) and/or port to set.';
     return { content: [{ type: 'text' as const, text }] };
   });
 
   server.registerTool(
     'config',
     {
-      description: 'Set server settings: cwd, port. Pass cwd and/or port to update.',
+      description: 'Set server settings: workingDirectory (or cwd), port. Pass workingDirectory and/or port to update.',
       inputSchema: {}
     },
     configHandler as (args: unknown, extra: unknown) => Promise<{ content: { type: 'text'; text: string }[] }>

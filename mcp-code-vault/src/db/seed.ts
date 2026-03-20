@@ -53,14 +53,17 @@ function loadJson<T>(dir: string, file: string): T {
   return JSON.parse(raw) as T;
 }
 
+export type SeedResult = 'ran' | 'skipped';
+
 /**
  * Idempotent seed: loads personas, models, project, and agents from
  * configs/seed/*.json and inserts them only when the DB is empty (no personas).
+ * Returns 'ran' when data was inserted, 'skipped' when DB already had data.
  */
-export async function runSeed(): Promise<void> {
+export async function runSeed(): Promise<SeedResult> {
   const count = await Persona.countDocuments();
   if (count > 0) {
-    return;
+    return 'skipped';
   }
 
   const dir = getSeedDir();
@@ -106,4 +109,5 @@ export async function runSeed(): Promise<void> {
       }
     });
   }
+  return 'ran';
 }

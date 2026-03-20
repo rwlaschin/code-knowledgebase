@@ -26,17 +26,20 @@
         <h2 class="text-xl font-semibold text-white mt-0 mb-4 border-b border-white/10 pb-2">Quick start</h2>
 
         <section id="setting-up-mcp-cursor" class="scroll-mt-28 docs-subsection">
-          <h3 class="docs-subsection-title">Setting up the MCP server in Cursor</h3>
+          <h3 class="docs-subsection-title">Setting up MCP server</h3>
           <ol class="list-decimal list-inside space-y-3 ml-1 text-gray-400">
             <li>
               Open <strong>Settings → MCP → Add server</strong> in Cursor (or edit your MCP config file directly).
             </li>
             <li>
+              <strong><code class="px-1 rounded bg-white/10">MONGO_URL</code></strong> — so the server can connect to MongoDB. Use a <code class="px-1 rounded bg-white/10">.env</code> file in the mcp-code-vault project root (e.g. <code class="px-1 rounded bg-white/10">MONGO_URL=mongodb://localhost:27017</code>) or pass it on the command line (e.g. <code class="px-1 rounded bg-white/10">cross-env MONGO_URL=mongodb://localhost:27017 npx tsx src/index.ts</code>).
+            </li>
+            <li>
               Paste the configuration block below. Replace placeholders as follows:
               <ul class="list-disc list-inside mt-2 space-y-1 text-gray-400">
-                <li><code class="px-1 rounded bg-white/10">cwd</code> — absolute path to the project root (where <code class="px-1 rounded bg-white/10">dist/index.js</code> will run).</li>
-                <li><code class="px-1 rounded bg-white/10">port</code> — port the MCP/stats server listens on (default <code class="px-1 rounded bg-white/10">3000</code>).</li>
-                <li><code class="px-1 rounded bg-white/10">MCP_PROJECT_NAME</code> — unique identifier for this project in the database.</li>
+                <li><code class="px-1 rounded bg-white/10">env.PORT</code> — port the MCP/stats server listens on (default <code class="px-1 rounded bg-white/10">3000</code>).</li>
+                <li><code class="px-1 rounded bg-white/10">env.MCP_PROJECT_NAME</code> — unique identifier for this project in the database.</li>
+                <li><code class="px-1 rounded bg-white/10">env.WORKING_DIRECTORY</code> — absolute path to the project/codebase to index.</li>
               </ul>
               <div class="relative mt-3">
                 <pre class="p-3 pr-12 rounded-lg bg-black/30 text-gray-200 text-xs overflow-x-auto"><code>{{ mcpSnippet }}</code></pre>
@@ -64,7 +67,7 @@
 
           <h4 class="text-sm font-semibold text-white mt-6 mb-2">Directory concepts</h4>
           <p class="text-gray-400 text-sm mb-2">
-            <strong>Spawn cwd</strong> — When Cursor starts the MCP server (e.g. <code class="px-1 rounded bg-white/10">npx tsx src/index.ts</code>), the process has a current working directory. If that directory is wrong, relative paths fail (ERR_MODULE_NOT_FOUND) and <code class="px-1 rounded bg-white/10">process.cwd()</code> is wrong. <strong>Project root</strong> — The server’s idea of “project root” (codebase to index) comes from MCP config or <code class="px-1 rounded bg-white/10">process.cwd()</code> at startup; both depend on the spawn cwd being correct.
+            <strong>Spawn cwd</strong> — Where the MCP host starts the process. If wrong, relative paths fail (ERR_MODULE_NOT_FOUND). For which codebase is indexed (project root), see <a href="#configuration" class="text-accent hover:underline">Configuration</a> → Project root / working directory.
           </p>
 
           <h4 class="text-sm font-semibold text-white mt-6 mb-2">Wrapper script (reliable setup)</h4>
@@ -126,7 +129,7 @@
             </div>
             <div>
               <dt class="font-medium text-gray-300 mb-1">Returns</dt>
-              <dd>Plain text: <strong>Code-vault config</strong> (cwd, port), then <strong>MCP snippet (for Cursor)</strong> — a ready-to-paste JSON block for Cursor MCP config.</dd>
+              <dd>Plain text: <strong>Code-vault config</strong> (projectName, workingDirectory, cwd, port), then <strong>MCP snippet (for Cursor)</strong> — a ready-to-paste JSON block for Cursor MCP config.</dd>
             </div>
           </dl>
         </section>
@@ -136,15 +139,15 @@
           <dl class="space-y-3 text-gray-400">
             <div>
               <dt class="font-medium text-gray-300 mb-1">Description</dt>
-              <dd>Sets server settings. Pass <code class="px-1 rounded bg-white/10">cwd</code> and/or <code class="px-1 rounded bg-white/10">port</code> to update the working directory or stats port the server reports and uses. Use when you need to correct cwd or port at runtime.</dd>
+              <dd>Sets server settings. Pass <code class="px-1 rounded bg-white/10">workingDirectory</code> (or <code class="px-1 rounded bg-white/10">cwd</code>) and/or <code class="px-1 rounded bg-white/10">port</code> to update the project root or stats port the server reports and uses. Use when you need to correct working directory or port at runtime.</dd>
             </div>
             <div>
               <dt class="font-medium text-gray-300 mb-1">Parameters</dt>
-              <dd>Optional: <code class="px-1 rounded bg-white/10">cwd</code> (string), <code class="px-1 rounded bg-white/10">port</code> (string). Pass only the keys you want to update.</dd>
+              <dd>Optional: <code class="px-1 rounded bg-white/10">workingDirectory</code> (string), <code class="px-1 rounded bg-white/10">cwd</code> (string, same as workingDirectory), <code class="px-1 rounded bg-white/10">port</code> (string). Pass only the keys you want to update.</dd>
             </div>
             <div>
               <dt class="font-medium text-gray-300 mb-1">Returns</dt>
-              <dd>Plain text confirming what was set (e.g. <code class="px-1 rounded bg-white/10">Set: cwd=/path, port=3000</code>) or a message if no settings were provided.</dd>
+              <dd>Plain text confirming what was set (e.g. <code class="px-1 rounded bg-white/10">Set: workingDirectory=/path, port=3000</code>) or a message if no settings were provided.</dd>
             </div>
           </dl>
         </section>
@@ -163,15 +166,15 @@
         </ol>
         <h4 class="text-sm font-semibold text-white mt-6 mb-2">Why the backend is required</h4>
         <p class="text-gray-400 text-sm mb-2">
-          The same process provides both the MCP (for Cursor) and the HTTP backend (metrics, Socket.IO, discovery). The UI only sees data when that HTTP backend is running. When Cursor starts the MCP server, the process always tries to start the backend too. If that fails (port in use, MongoDB not reachable), the process runs in <strong>MCP-only</strong> mode: Cursor tools work, but there is no HTTP server and no discovery, so the UI shows nothing. Common causes: <code class="px-1 rounded bg-white/10">env</code> not set in Cursor’s MCP config (set <code class="px-1 rounded bg-white/10">PORT</code> and <code class="px-1 rounded bg-white/10">MCP_PROJECT_NAME</code>); port 3000 in use; MongoDB not available when Cursor spawns the process.
+          The same process provides both the MCP and the UI. The UI only sees data when the HTTP backend is running. When the MCP server starts, the backend starts too. If that fails (port in use, MongoDB not reachable), the process runs in <strong>MCP-only</strong> mode: Tools work, but the UI will not update. Common causes: <code class="px-1 rounded bg-white/10">env</code> not set in MCP config (see <a href="#configuration" class="text-accent hover:underline">Configuration</a>); port in use; MongoDB not available when the host spawns the process.
         </p>
-        <h4 class="text-sm font-semibold text-white mt-4 mb-2">Using the Cursor-started process as the backend</h4>
+        <h4 class="text-sm font-semibold text-white mt-4 mb-2">Using the MCP process as the backend</h4>
         <p class="text-gray-400 text-sm mb-2">
-          Set <code class="px-1 rounded bg-white/10">env</code> in Cursor’s MCP config (<code class="px-1 rounded bg-white/10">PORT</code>, e.g. 3000 or 3100; <code class="px-1 rounded bg-white/10">MCP_PROJECT_NAME</code>). Ensure MongoDB is reachable (same <code class="px-1 rounded bg-white/10">MONGO_URL</code> / <code class="px-1 rounded bg-white/10">.env</code>). Start the UI: if backend is on 3000, run <code class="px-1 rounded bg-white/10">npm run dev:ui</code>; if on 3100, run <code class="px-1 rounded bg-white/10">NUXT_PUBLIC_UI_PORT=3100 STATS_PORT=3100 npm run dev</code> in platform-ui. After reloading MCP, the Cursor-started process should register with the UI on UDP 9255.
+          Set <code class="px-1 rounded bg-white/10">env</code> in MCP config (<code class="px-1 rounded bg-white/10">PORT</code>, <code class="px-1 rounded bg-white/10">MCP_PROJECT_NAME</code>, <code class="px-1 rounded bg-white/10">WORKING_DIRECTORY</code>); see <a href="#configuration" class="text-accent hover:underline">Configuration</a>. Ensure MongoDB is reachable. Start the UI: if backend is on 3000, run <code class="px-1 rounded bg-white/10">npm run dev:ui</code>; if on 3100, run <code class="px-1 rounded bg-white/10">NUXT_PUBLIC_UI_PORT=3100 STATS_PORT=3100 npm run dev</code> in platform-ui. After reloading MCP, the Cursor-started process should register with the UI on UDP 9255.
         </p>
         <h4 class="text-sm font-semibold text-white mt-4 mb-2">Running the backend separately</h4>
         <p class="text-gray-400 text-sm">
-          If the Cursor-started process never gets a working backend, run it yourself: in mcp-code-vault run <code class="px-1 rounded bg-white/10">PORT=3100 npm run dev</code> (or 3000); in platform-ui run <code class="px-1 rounded bg-white/10">NUXT_PUBLIC_UI_PORT=3100 STATS_PORT=3100 npm run dev</code> so the UI connects to that backend.
+          If the MCP process never gets a working backend, run it yourself: in mcp-code-vault run <code class="px-1 rounded bg-white/10">PORT=3100 npm run dev</code> (or 3000); in platform-ui run <code class="px-1 rounded bg-white/10">NUXT_PUBLIC_UI_PORT=3100 STATS_PORT=3100 npm run dev</code> so the UI connects to that backend.
         </p>
       </section>
 
@@ -187,7 +190,7 @@
           <li><strong>Personas</strong> — Global; optional per agent. If no personas assigned to an agent, no persona is used.</li>
           <li><strong>Setup flow</strong> — Choose/create project → optionally edit personas (global) → edit agents for the selected project (models, personas, tools) → save. Changes hot-reload from DB without restart.</li>
           <li><strong>Two places to configure</strong> — Via MCP tools or via the platform UI; both read/write the same database.</li>
-          <li><strong>Project root / cwd</strong> — Prefer <code class="px-1 rounded bg-white/10">cwd</code> in MCP config; fallback <code class="px-1 rounded bg-white/10">process.cwd()</code> at startup. Moving the project = update MCP config to the new path; project key in DB stays the same.</li>
+          <li><strong>Project root / working directory</strong> — Set <code class="px-1 rounded bg-white/10">env.WORKING_DIRECTORY</code> in MCP config to the codebase to index; fallback <code class="px-1 rounded bg-white/10">process.cwd()</code> at startup. Moving the project = update MCP config to the new path; project key in DB stays the same.</li>
         </ul>
       </section>
     </article>
@@ -270,10 +273,12 @@ onMounted(() => {
 
 const mcpSnippet = computed(() => {
   const ctx = docsContext.value
-  const rawCwd = ctx?.cwd || '/path/to/your-project-root'
+  const rawCwd = ctx?.cwd || '/path/to/mcp-code-vault-repo'
   const cwd = rawCwd.replace(/\\/g, '\\\\') // escape for JSON on Windows
   const port = ctx?.port || '3000'
   const projectName = 'my-project' // user should set this to identify this repo in the DB
+  const workingDirectory = ctx?.workingDirectory || ctx?.cwd || '/path/to/codebase-to-index'
+  const workingDirEscaped = workingDirectory.replace(/\\/g, '\\\\')
   return `{
   "mcpServers": {
     "mcp-code-vault": {
@@ -282,7 +287,8 @@ const mcpSnippet = computed(() => {
       "cwd": "${cwd}",
       "env": {
         "PORT": "${port}",
-        "MCP_PROJECT_NAME": "${projectName}"
+        "MCP_PROJECT_NAME": "${projectName}",
+        "WORKING_DIRECTORY": "${workingDirEscaped}"
       }
     }
   }

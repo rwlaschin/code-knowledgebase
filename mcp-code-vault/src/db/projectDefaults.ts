@@ -1,15 +1,10 @@
 /**
- * Is NEW project defaults (Section 2.2): ensure collections and default branch from .git/HEAD.
+ * Project defaults: ensure the two per-project collections exist.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getProjectRoot } from '../scannerRequirements';
-import {
-  ensureProjectCollections,
-  hasAnyPaths,
-  getOrCreateBranch
-} from './projectDb';
+import { ensureProjectCollections } from './projectDb';
 
 /**
  * Reads the current branch name from .git/HEAD under the given project root.
@@ -27,13 +22,8 @@ export function readCurrentBranchFromRoot(projectRoot: string): string {
 }
 
 /**
- * Ensures project collections exist and, when the project is NEW (no paths),
- * creates the default branch from .git/HEAD and persists it via getOrCreateBranch.
+ * Ensures the two per-project collections (_knowledge_base and _FileProcessor) exist with indexes.
  */
 export async function ensureProjectDefaults(projectKey: string): Promise<void> {
   await ensureProjectCollections(projectKey);
-  if (await hasAnyPaths(projectKey)) return;
-  const root = await getProjectRoot(projectKey);
-  const branchName = readCurrentBranchFromRoot(root);
-  await getOrCreateBranch(projectKey, branchName);
 }

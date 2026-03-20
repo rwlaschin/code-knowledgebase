@@ -5,6 +5,7 @@
  */
 
 import { writeProcessLog } from '../stdioMode';
+import { normalizeMetricPayload } from './normalizeMetric';
 
 const INSTANCE_ID = process.env.INSTANCE_ID ?? 'mcp-code-vault';
 
@@ -77,11 +78,20 @@ class MetricSender {
     writeProcessLog(
       `[MCP] Sending metric operation=${payload.operation} kind=${payload.kind} to ${base}/metrics\n`
     );
-    await fetch(`${base}/metrics`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }).catch(() => {});
+    try {
+      const res = await fetch(`${base}/metrics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        writeProcessLog(`[MCP] POST /metrics failed ${res.status} operation=${payload.operation}: ${text.slice(0, 200)}\n`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      writeProcessLog(`[MCP] POST /metrics error operation=${payload.operation}: ${msg}\n`);
+    }
   };
 }
 
@@ -99,9 +109,10 @@ export function resetMetricSenderForTesting(): void {
 }
 
 export async function postMetric(payload: MetricPayload): Promise<void> {
-  const msg = `[MCP] postMetric operation=${payload.operation} kind=${payload.kind}\n`;
+  const normalized = normalizeMetricPayload(payload);
+  const msg = `[MCP] postMetric operation=${normalized.operation} kind=${normalized.kind}\n`;
   writeProcessLog(msg);
-  await metricSender.post(payload);
+  await metricSender.post(normalized);
 }
 
 /**

@@ -5,6 +5,12 @@ jest.mock('os', () => ({
   }))
 }));
 
+// Simulate npm run dev (TTY): skip required-env check so tests don't need MCP_PROJECT_NAME/WORKING_DIRECTORY
+jest.mock('../src/stdioMode', () => ({
+  ...jest.requireActual('../src/stdioMode'),
+  stdioMode: false
+}));
+
 jest.mock('../src/stats/server', () => ({ createStatsServer: jest.fn() }));
 jest.mock('../src/mcp/server', () => ({ createMcpServer: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../src/logger', () => ({ logger: { info: jest.fn(), fatal: jest.fn() } }));
@@ -40,13 +46,14 @@ const primaryServer = require('../src/primaryServer');
 const primaryClient = require('../src/primaryClient');
 const metricsClient = require('../src/stats/metricsClient');
 
-const { main, localNetworkHost } = require('../src/index');
+const { main, localNetworkHost, __resetProcessInstanceIdForTest } = require('../src/index');
 
 let stderrWriteSpy: jest.SpyInstance;
 
 describe('index', () => {
   beforeEach(() => {
     stderrWriteSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    __resetProcessInstanceIdForTest();
   });
   afterEach(() => {
     stderrWriteSpy?.mockRestore();
@@ -98,7 +105,7 @@ describe('index', () => {
       expect(discoveryClient.tryStartDiscoveryAsPrimary).toHaveBeenCalledWith(3999);
       expect(createStatsServer).toHaveBeenCalled();
       expect(mockListen).toHaveBeenCalledWith({ port: 3999, host: '0.0.0.0' });
-      expect(discoveryClient.startDiscoveryClient).toHaveBeenCalledWith(3999);
+      expect(discoveryClient.startDiscoveryClient).toHaveBeenCalledWith(3999, 'mcp-3999');
       expect(primaryServer.startPrimaryServer).toHaveBeenCalledWith(3999);
       expect(logger.info).toHaveBeenCalled();
       expect(createMcpServer).toHaveBeenCalled();

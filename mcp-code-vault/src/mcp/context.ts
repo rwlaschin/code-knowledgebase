@@ -1,7 +1,7 @@
 /**
- * MCP server context: CWD and port. Set at startup; config tool can update them.
+ * MCP server context: working directory (project root) and port. Set at startup from env (WORKING_DIRECTORY, PORT); config tool can update them.
  */
-let serverCwd: string = process.cwd();
+let serverCwd: string = process.env.WORKING_DIRECTORY ?? process.cwd();
 let serverPort: string = process.env.PORT ?? '3000';
 
 export function getServerCwd(): string {
@@ -17,14 +17,15 @@ export function setServerContext(cwd: string, port: string): void {
   serverPort = port;
 }
 
-export type ConfigInput = { cwd?: string; port?: string };
+export type ConfigInput = { cwd?: string; workingDirectory?: string; port?: string };
 
 /** Apply settings from the config tool. Returns what was set. */
 export function applyConfig(input: ConfigInput): { set: string[] } {
   const set: string[] = [];
-  if (input.cwd !== undefined && input.cwd !== '') {
-    serverCwd = input.cwd;
-    set.push(`cwd=${serverCwd}`);
+  const newCwd = input.workingDirectory ?? input.cwd;
+  if (newCwd !== undefined && newCwd !== '') {
+    serverCwd = newCwd;
+    set.push(`workingDirectory=${serverCwd}`);
   }
   if (input.port !== undefined && input.port !== '') {
     serverPort = input.port;
@@ -33,9 +34,20 @@ export function applyConfig(input: ConfigInput): { set: string[] } {
   return { set };
 }
 
+/** Redact MONGO_URL for display (never expose credentials). */
+function redactMongoUrl(url: string | undefined): string {
+  if (url === undefined || String(url).trim() === '') return '(not set)';
+  return 'mongodb://***';
+}
+
 /** Return current settings and MCP snippet (read-only) for the settings tool. Matches Config page: config table + MCP snippet. */
 export function getSettingsContent(): string {
-  const projectName = process.env.MCP_PROJECT_NAME ?? 'my-project';
+  const projectName =
+    process.env.MCP_PROJECT_NAME !== undefined && process.env.MCP_PROJECT_NAME !== ''
+      ? process.env.MCP_PROJECT_NAME
+      : '(not set)';
+  const mongoUrl = redactMongoUrl(process.env.MONGO_URL);
+  const pwd = process.env.PWD !== undefined && process.env.PWD !== '' ? process.env.PWD : '(not set)';
   const snippet = JSON.stringify(
     {
       mcpServers: {
@@ -43,12 +55,16 @@ export function getSettingsContent(): string {
           command: 'node',
           args: ['dist/index.js'],
           cwd: serverCwd,
-          env: { PORT: serverPort, MCP_PROJECT_NAME: projectName }
+          env: {
+            PORT: serverPort,
+            MCP_PROJECT_NAME: process.env.MCP_PROJECT_NAME ?? '',
+            WORKING_DIRECTORY: serverCwd
+          }
         }
       }
     },
     null,
     2
   );
-  return `Code-vault config\ncwd: ${serverCwd}\nport: ${serverPort}\n\nMCP snippet (for Cursor)\n${snippet}`;
+  return `Code-vault config\nprojectName: ${projectName}\nmongoUrl: ${mongoUrl}\nworkingDirectory: ${serverCwd}\ncwd: ${serverCwd}\npwd: ${pwd}\nport: ${serverPort}\n\nMCP snippet (for Cursor)\n${snippet}`;
 }

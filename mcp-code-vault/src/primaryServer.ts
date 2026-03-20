@@ -1,5 +1,5 @@
 /**
- * Primary TCP server on port 9256. Client MCPs connect, send { port, projectName },
+ * Primary TCP server on port 9256. Client MCPs connect, send { port, projectKey } (legacy: projectName),
  * receive { statsPort }, and keep the connection open (for disconnect detection).
  */
 
@@ -10,7 +10,7 @@ const PRIMARY_TCP_PORT = Number(process.env.PRIMARY_TCP_PORT) || 9256;
 
 let server: net.Server | null = null;
 const clientSockets = new Set<net.Socket>();
-const clientInfo = new Map<net.Socket, { port: number; projectName: string }>();
+const clientInfo = new Map<net.Socket, { port: number; projectKey: string }>();
 
 function onClientClose(socket: net.Socket): void {
   const info = clientInfo.get(socket);
@@ -21,7 +21,7 @@ function onClientClose(socket: net.Socket): void {
       'secondary:disconnected',
       JSON.stringify({
         port: info.port,
-        projectName: info.projectName,
+        projectKey: info.projectKey,
         ts: new Date().toISOString()
       })
     );
@@ -29,7 +29,7 @@ function onClientClose(socket: net.Socket): void {
 }
 
 /** Current secondaries (still connected). Used when sending initial state to a new UI client so we only send who is really there. */
-export function getCurrentSecondaries(): { port: number; projectName: string }[] {
+export function getCurrentSecondaries(): { port: number; projectKey: string }[] {
   return Array.from(clientInfo.values());
 }
 
@@ -48,16 +48,21 @@ export function startPrimaryServer(httpPort: number): void {
       if (idx === -1) return;
       socket.removeListener('data', onData);
       try {
-        const payload = JSON.parse(buffer.slice(0, idx)) as { port?: number; projectName?: string };
+        const payload = JSON.parse(buffer.slice(0, idx)) as { port?: number; projectKey?: string; projectName?: string };
         const clientPort = typeof payload?.port === 'number' ? payload.port : 0;
-        const clientProjectName = typeof payload?.projectName === 'string' ? payload.projectName : '';
-        clientInfo.set(socket, { port: clientPort, projectName: clientProjectName });
+        const clientProjectKey =
+          typeof payload?.projectKey === 'string' && payload.projectKey.trim() !== ''
+            ? payload.projectKey.trim()
+            : typeof payload?.projectName === 'string'
+              ? payload.projectName
+              : '';
+        clientInfo.set(socket, { port: clientPort, projectKey: clientProjectKey });
         socket.write(JSON.stringify({ statsPort: httpPort }) + '\n');
         pushToStream(
           'secondary:connected',
           JSON.stringify({
             port: clientPort,
-            projectName: clientProjectName,
+            projectKey: clientProjectKey,
             ts: new Date().toISOString()
           })
         );

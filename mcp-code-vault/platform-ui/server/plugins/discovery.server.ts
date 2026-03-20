@@ -38,8 +38,15 @@ export default defineNitroPlugin(() => {
     const send = () => {
       const payload = JSON.stringify({ registerUrl })
       const buf = Buffer.from(payload, 'utf8')
+      /** Same-host discovery (always works; MCP listens on 0.0.0.0:9255). */
+      socket.send(buf, 0, buf.length, DISCOVERY_PORT, '127.0.0.1', (err) => {
+        if (err) console.error('[discovery] loopback send error:', err)
+      })
+      /** LAN broadcast — often fails with ENETUNREACH (VPN, no default route, etc.); ignore that case. */
       socket.send(buf, 0, buf.length, DISCOVERY_PORT, '255.255.255.255', (err) => {
-        if (err) console.error('[discovery] broadcast send error:', err)
+        if (err && (err as NodeJS.ErrnoException).code !== 'ENETUNREACH') {
+          console.error('[discovery] broadcast send error:', err)
+        }
       })
     }
     send()

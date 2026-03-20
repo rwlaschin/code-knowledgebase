@@ -24,13 +24,13 @@ function clearSocket(): void {
 }
 
 /**
- * Connect to primary, send { port, projectName }, receive { statsPort }.
+ * Connect to primary, send { port, projectKey }, receive { statsPort }.
  * If discover is provided (from discoverPrimary()), use that host/port; else use PRIMARY_HOST/PRIMARY_TCP_PORT.
  * Returns { statsPort } and keeps the socket open, or null if connection/handshake failed.
  */
 export function connectToPrimary(
   myPort: number,
-  projectName: string,
+  projectKey: string,
   discover?: { host: string; tcpPort: number } | null
 ): Promise<{ statsPort: number } | null> {
   const host = discover?.host ?? PRIMARY_HOST;
@@ -41,7 +41,7 @@ export function connectToPrimary(
     const socket = net.connect(
       { port: tcpPort, host },
       () => {
-        socket.write(JSON.stringify({ port: myPort, projectName }) + '\n');
+        socket.write(JSON.stringify({ port: myPort, projectKey }) + '\n');
       }
     );
 
@@ -60,14 +60,17 @@ export function connectToPrimary(
           return;
         }
         clientSocket = socket;
-        socket.on('close', () => {
+        let disconnectFired = false;
+        const onDisconnect = () => {
           clearSocket();
-          disconnectCallback?.();
-        });
-        socket.on('error', () => {
-          clearSocket();
-          disconnectCallback?.();
-        });
+          if (disconnectFired) return;
+          disconnectFired = true;
+          const cb = disconnectCallback;
+          disconnectCallback = null;
+          cb?.();
+        };
+        socket.on('close', onDisconnect);
+        socket.on('error', onDisconnect);
         resolve({ statsPort });
       } catch {
         socket.destroy();

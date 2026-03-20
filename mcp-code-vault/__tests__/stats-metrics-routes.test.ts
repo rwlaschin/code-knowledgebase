@@ -4,6 +4,19 @@ jest.mock('../src/db/mongoose', () => ({
 jest.mock('../src/db/seed', () => ({
   runSeed: jest.fn().mockResolvedValue(undefined)
 }));
+jest.mock('../src/db/ensureProject', () => ({
+  ensureProjectFromConfig: jest.fn().mockResolvedValue('unchanged' as const)
+}));
+
+jest.mock('../src/db/projectDb', () => ({
+  ...jest.requireActual('../src/db/projectDb'),
+  ensureProjectCollections: jest.fn().mockResolvedValue(undefined)
+}));
+
+jest.mock('../src/stats/metricsClient', () => ({
+  ...jest.requireActual('../src/stats/metricsClient'),
+  postMetric: jest.fn().mockResolvedValue(undefined)
+}));
 
 const mockCreate = jest.fn();
 const mockFind = jest.fn();
@@ -71,7 +84,7 @@ describe('Stats metrics routes', () => {
         duration_ms: 100,
         status: 'ok' as const,
         error_code: undefined,
-        metadata: undefined
+        metadata: { projectKey: 'default' }
       };
       mockCreate.mockResolvedValue(doc);
 
@@ -92,11 +105,15 @@ describe('Stats metrics routes', () => {
       expect(res.statusCode).toBe(200);
       expect(JSON.parse(res.payload)).toEqual({ ok: true });
       expect(mockCreate).toHaveBeenCalled();
+      expect(mockCreate.mock.calls[0][0]).toMatchObject({
+        metadata: { projectKey: 'default' }
+      });
       expect(mockPushToStream).toHaveBeenCalledWith('metric', expect.any(String));
       const pushedPayload = JSON.parse(mockPushToStream.mock.calls[0][1]);
       expect(pushedPayload.operation).toBe('query');
       expect(pushedPayload.kind).toBe('query');
       expect(pushedPayload.instance_id).toBe('i1');
+      expect(pushedPayload.metadata).toEqual({ projectKey: 'default' });
       expect(new Date(pushedPayload.started_at).toISOString()).toBe(pushedPayload.started_at);
       expect(new Date(pushedPayload.ended_at).toISOString()).toBe(pushedPayload.ended_at);
     });
@@ -126,6 +143,7 @@ describe('Stats metrics routes', () => {
       const body = JSON.parse(res.payload);
       expect(body.metrics).toHaveLength(1);
       expect(body.metrics[0].operation).toBe('query');
+      expect(body.metrics[0].metadata).toEqual({ projectKey: 'default' });
 
       await fastify!.inject({
         method: 'GET',

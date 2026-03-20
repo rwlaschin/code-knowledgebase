@@ -9,6 +9,22 @@ describe('shutdown', () => {
     exitSpy.mockRestore();
   });
 
+  describe('setShutdownOnTransportClose and getShutdownOnTransportClose', () => {
+    it('getShutdownOnTransportClose returns value set by setShutdownOnTransportClose', () => {
+      jest.isolateModules(() => {
+        const {
+          setShutdownOnTransportClose,
+          getShutdownOnTransportClose
+        } = require('../src/shutdown');
+        expect(getShutdownOnTransportClose()).toBe(false);
+        setShutdownOnTransportClose(true);
+        expect(getShutdownOnTransportClose()).toBe(true);
+        setShutdownOnTransportClose(false);
+        expect(getShutdownOnTransportClose()).toBe(false);
+      });
+    });
+  });
+
   describe('registerShutdown', () => {
     it('registers a sync hook', () => {
       const { registerShutdown } = require('../src/shutdown');

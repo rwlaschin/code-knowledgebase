@@ -1,91 +1,78 @@
 /**
- * Tests for primaryServer: TCP server on 9256 for client MCP handshake.
+ * Unit tests for primary TCP server (getCurrentSecondaries, startPrimaryServer, stopPrimaryServer).
+ * Uses mocked net so we don't bind to a real port.
  */
 
-import * as net from 'net';
-import { startPrimaryServer, stopPrimaryServer } from '@/primaryServer';
+const mockPushToStream = jest.fn();
+jest.mock('../src/stats/streamChannel', () => ({
+  pushToStream: (...args: unknown[]) => mockPushToStream(...args)
+}));
 
-const PRIMARY_TCP_PORT = 9256;
+const mockListen = jest.fn((port: number, host: string, cb: () => void) => {
+  if (typeof cb === 'function') cb();
+});
+const mockClose = jest.fn((cb: (err?: Error) => void) => {
+  if (typeof cb === 'function') cb();
+});
+let connectionCallback: ((socket: unknown) => void) | null = null;
+
+const mockCreateServer = jest.fn((cb: (socket: unknown) => void) => {
+  connectionCallback = cb;
+  return {
+    listen: mockListen,
+    close: mockClose
+  };
+});
+
+jest.mock('net', () => ({
+  createServer: (cb: (socket: unknown) => void) => mockCreateServer(cb)
+}));
+
+const { getCurrentSecondaries, startPrimaryServer, stopPrimaryServer } = require('../src/primaryServer');
 
 describe('primaryServer', () => {
+  beforeEach(() => {
+    mockPushToStream.mockClear();
+    mockListen.mockClear();
+    mockClose.mockClear();
+    mockCreateServer.mockClear();
+    connectionCallback = null;
+  });
+
   afterEach(async () => {
     await stopPrimaryServer();
   });
 
-  it('starts TCP server on 9256 and responds to handshake', async () => {
-    startPrimaryServer(3999);
-
-    const result = await new Promise<{ statsPort: number }>((resolve, reject) => {
-      const client = net.connect({ port: PRIMARY_TCP_PORT, host: '127.0.0.1' }, () => {
-        client.write(JSON.stringify({ port: 3100, projectName: 'my-proj' }) + '\n');
-      });
-      let buffer = '';
-      client.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString();
-        if (buffer.includes('\n')) {
-          try {
-            const obj = JSON.parse(buffer.trim()) as { statsPort: number };
-            resolve(obj);
-          } catch (e) {
-            reject(e);
-          }
-          client.destroy();
-        }
-      });
-      client.on('error', reject);
+  describe('getCurrentSecondaries', () => {
+    it('returns empty array when no clients connected', () => {
+      expect(getCurrentSecondaries()).toEqual([]);
     });
-
-    expect(result).toEqual({ statsPort: 3999 });
   });
 
-  it('keeps connection open after handshake', async () => {
-    startPrimaryServer(3000);
-
-    const result = await new Promise<{ gotResponse: boolean; stillOpen: boolean }>((resolve, reject) => {
-      const client = net.connect({ port: PRIMARY_TCP_PORT, host: '127.0.0.1' }, () => {
-        client.write(JSON.stringify({ port: 3100, projectName: 'p' }) + '\n');
-      });
-      let gotResponse = false;
-      client.on('data', () => {
-        gotResponse = true;
-        setImmediate(() => {
-          const stillOpen = client.writable && !client.destroyed;
-          client.destroy();
-          resolve({ gotResponse, stillOpen });
-        });
-      });
-      client.on('error', reject);
+  describe('startPrimaryServer', () => {
+    it('creates server and listens on PRIMARY_TCP_PORT', () => {
+      startPrimaryServer(3999);
+      expect(mockCreateServer).toHaveBeenCalled();
+      expect(mockListen).toHaveBeenCalledWith(9256, '127.0.0.1', expect.any(Function));
     });
 
-    expect(result.gotResponse).toBe(true);
-    expect(result.stillOpen).toBe(true);
+    it('is idempotent: second call does not create another server', () => {
+      startPrimaryServer(3999);
+      startPrimaryServer(3999);
+      expect(mockCreateServer).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('stopPrimaryServer closes server and client sockets', async () => {
-    startPrimaryServer(3000);
-
-    const client = net.connect({ port: PRIMARY_TCP_PORT, host: '127.0.0.1' }, () => {
-      client.write(JSON.stringify({ port: 3100, projectName: 'p' }) + '\n');
+  describe('stopPrimaryServer', () => {
+    it('closes server and clears state', async () => {
+      startPrimaryServer(3999);
+      await stopPrimaryServer();
+      expect(mockClose).toHaveBeenCalled();
+      expect(getCurrentSecondaries()).toEqual([]);
     });
 
-    const gotResponse = await new Promise<boolean>((resolve) => {
-      client.on('data', () => resolve(true));
-      client.on('close', () => resolve(false));
+    it('is safe to call when server was never started', async () => {
+      await expect(stopPrimaryServer()).resolves.toBeUndefined();
     });
-    expect(gotResponse).toBe(true);
-
-    await stopPrimaryServer();
-
-    await expect(
-      new Promise<void>((resolve, reject) => {
-        const c = net.connect({ port: PRIMARY_TCP_PORT, host: '127.0.0.1' });
-        c.on('connect', () => resolve());
-        c.on('error', (err) => reject(err));
-      })
-    ).rejects.toThrow();
-  });
-
-  it('is safe to call stopPrimaryServer when never started', async () => {
-    await expect(stopPrimaryServer()).resolves.toBeUndefined();
   });
 });

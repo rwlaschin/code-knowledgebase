@@ -22,7 +22,7 @@ const MetricSchema = new Schema<IMetric>(
     duration_ms: { type: Number, required: true },
     status: { type: String, enum: ['ok', 'error'], required: true },
     error_code: { type: String },
-    metadata: { type: Schema.Types.Mixed }
+    metadata: { type: Schema.Types.Mixed, default: () => ({}) }
   },
   { timestamps: true }
 );

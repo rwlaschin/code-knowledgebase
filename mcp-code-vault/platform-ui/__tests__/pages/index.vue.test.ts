@@ -21,6 +21,18 @@ vi.mock('nuxt/app', () => ({
   useRuntimeConfig: () => mockRuntimeConfig()
 }));
 
+/** Shared mount options: stub Icon (Nuxt Icon / lucide) and other components not resolved in test env. */
+const globalMountOptions = {
+  global: {
+    components: { GlassCard },
+    stubs: {
+      ClientOnly: { template: '<div><slot /></div>' },
+      apexchart: true,
+      Icon: { template: '<span />' }
+    }
+  }
+};
+
 vi.mock('socket.io-client', () => ({
   io: (...args: unknown[]) => mockIo(...args)
 }));
@@ -57,15 +69,7 @@ describe('Index page', () => {
   });
 
   it('renders and sets up Socket.IO on mount', async () => {
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     expect(wrapper.text()).toContain('Stats');
     expect(wrapper.text()).toContain('Time series');
@@ -83,15 +87,7 @@ describe('Index page', () => {
           : { ok: true, json: () => Promise.resolve([]) } as Response
       )
     );
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     expect(mockIo).toHaveBeenCalledWith(
       expect.stringMatching(/^http:\/\/.+:3100$/),
@@ -99,16 +95,18 @@ describe('Index page', () => {
     );
   });
 
+  it('shows Connected when server emits connected event (even if first heartbeat is missed)', async () => {
+    const wrapper = mount(Index, globalMountOptions);
+    await flushPromises();
+    const connectedCb = mockSocketHandlers['connected'];
+    expect(connectedCb).toBeDefined();
+    connectedCb!('{"ts":"2025-01-01T00:00:00.000Z"}');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toContain('Connected');
+  });
+
   it('updates streamStatus and lastStreamEvent when socket fires connected and heartbeat', async () => {
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     const connectedCb = mockSocketHandlers['connected'];
     const heartbeatCb = mockSocketHandlers['heartbeat'];
@@ -129,15 +127,7 @@ describe('Index page', () => {
   });
 
   it('shows "—" for Files processed and Files updated when no scan data', async () => {
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     expect(wrapper.text()).toContain('Files processed');
     expect(wrapper.text()).toContain('Files updated');
@@ -145,15 +135,7 @@ describe('Index page', () => {
   });
 
   it('updates Files processed and Files updated when socket receives scan:progress', async () => {
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     const progressCb = mockSocketHandlers['scan:progress'];
     expect(progressCb).toBeDefined();
@@ -164,15 +146,7 @@ describe('Index page', () => {
   });
 
   it('shows connection title with last update when connected and heartbeat received', async () => {
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     const connectedCb = mockSocketHandlers['connected'];
     const heartbeatCb = mockSocketHandlers['heartbeat'];
@@ -184,15 +158,7 @@ describe('Index page', () => {
   });
 
   it('updates stats from stream when metric event has duration and metadata', async () => {
-    const wrapper = mount(Index, {
-      global: {
-        components: { GlassCard },
-        stubs: {
-          ClientOnly: { template: '<div><slot /></div>' },
-          apexchart: true
-        }
-      }
-    });
+    const wrapper = mount(Index, globalMountOptions);
     await flushPromises();
     const metricCb = mockSocketHandlers['metric'];
     expect(metricCb).toBeDefined();
@@ -207,5 +173,33 @@ describe('Index page', () => {
     }));
     await wrapper.vm.$nextTick();
     expect(wrapper.text()).toMatch(/\d+/);
+  });
+
+  it('stream event log data accordion stays open when another heartbeat prepends (grouped top row)', async () => {
+    const wrapper = mount(Index, globalMountOptions);
+    await flushPromises();
+    const connectedCb = mockSocketHandlers['connected'];
+    const heartbeatCb = mockSocketHandlers['heartbeat'];
+    expect(connectedCb).toBeDefined();
+    expect(heartbeatCb).toBeDefined();
+
+    connectedCb!('{}');
+    await wrapper.vm.$nextTick();
+    heartbeatCb!(JSON.stringify({ ts: '2025-01-01T00:00:01.000Z' }));
+    await wrapper.vm.$nextTick();
+    heartbeatCb!(JSON.stringify({ ts: '2025-01-01T00:00:02.000Z' }));
+    await wrapper.vm.$nextTick();
+
+    const dataToggles = wrapper.findAll('button[aria-label="Show full data"]');
+    expect(dataToggles.length).toBeGreaterThan(0);
+    await dataToggles[0]!.trigger('click');
+    await wrapper.vm.$nextTick();
+    expect(dataToggles[0]!.attributes('aria-expanded')).toBe('true');
+
+    heartbeatCb!(JSON.stringify({ ts: '2025-01-01T00:00:03.000Z' }));
+    await wrapper.vm.$nextTick();
+
+    const after = wrapper.findAll('button[aria-label="Show full data"]');
+    expect(after[0]!.attributes('aria-expanded')).toBe('true');
   });
 });

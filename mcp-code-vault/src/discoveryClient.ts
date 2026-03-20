@@ -9,9 +9,14 @@ import * as dgram from 'dgram';
 import * as http from 'http';
 import * as https from 'https';
 import * as os from 'os';
+import { logger } from './logger';
+
+const log = logger.child({ component: 'discovery' });
+const PREFIX = '[mcp] [discovery]';
 
 const DISCOVERY_PORT = 9255;
-const REGISTER_THROTTLE_MS = 25_000;
+/** At most one registration per URL per 5s (matches UI broadcast interval; dedupes duplicate UDP delivery). */
+const REGISTER_THROTTLE_MS = 5_000;
 
 /** Port for primary to announce how to connect (TCP host + port). Broadcast to 255.255.255.255 and unicast to 127.0.0.1. */
 export const PRIMARY_ANNOUNCE_PORT = 9257;
@@ -93,14 +98,13 @@ function attachMessageHandler(sock: dgram.Socket, port: number): void {
       const req = (isHttps ? https : http).request(options, (res) => {
         res.resume();
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          process.stderr.write(`[discovery] Registered with UI at ${url}; this backend's stats port is ${port}\n`);
+          log.info({ msg: `${PREFIX} Registered with UI at ${url}; stats port ${port}` });
         }
       });
       req.on('error', (err) => {
-        console.warn(
-          `[discovery] Register failed: ${(err as Error).message}. ` +
-            `Could not reach UI at ${url}. Ensure the UI is running (e.g. npm run dev in platform-ui).`
-        );
+        log.warn({
+          msg: `${PREFIX} Register failed: ${(err as Error).message}. Could not reach UI at ${url}. Ensure the UI is running (e.g. npm run dev in platform-ui).`
+        });
       });
       req.setTimeout(5000, () => req.destroy());
       req.write(body);
@@ -131,19 +135,21 @@ export function tryStartDiscoveryAsPrimary(port: number): Promise<boolean> {
       } catch {
         // optional
       }
-      process.stderr.write(
-        `[discovery] Listening on UDP ${DISCOVERY_PORT} | stats port ${port} | will register with UI when it broadcasts\n`
-      );
+      log.info({
+        msg: `${PREFIX} Listening on UDP ${DISCOVERY_PORT} | stats port ${port} | will register with UI when it broadcasts`
+      });
       resolve(true);
     });
     s.once('error', (err: NodeJS.ErrnoException) => {
       socket = null;
       s.close();
       if (err.code === 'EADDRINUSE') {
-        console.warn('[discovery] Port 9255 in use; skipping discovery (another MCP on this host may be listening).');
+        log.info({
+          msg: `${PREFIX} Port 9255 in use; skipping discovery (another MCP on this host may be listening).`
+        });
         resolve(false);
       } else {
-        console.error('[discovery] UDP listener error:', err);
+        log.error({ err, msg: `${PREFIX} UDP listener error` });
         reject(err);
       }
     });
@@ -160,9 +166,11 @@ export function startDiscoveryClient(port: number, projectName?: string): void {
   socket = dgram.createSocket('udp4');
   socket.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      console.warn('[discovery] Port 9255 in use; skipping discovery (another MCP on this host may be listening).');
+      log.info({
+        msg: `${PREFIX} Port 9255 in use; skipping discovery (another MCP on this host may be listening).`
+      });
     } else {
-      console.error('[discovery] UDP listener error:', err);
+      log.error({ err, msg: `${PREFIX} UDP listener error` });
     }
   });
   attachMessageHandler(socket, port);
@@ -172,9 +180,9 @@ export function startDiscoveryClient(port: number, projectName?: string): void {
     } catch {
       // optional
     }
-    process.stderr.write(
-      `[discovery] Listening on UDP ${DISCOVERY_PORT} | stats port ${port} | will register with UI when it broadcasts\n`
-    );
+    log.info({
+      msg: `${PREFIX} Listening on UDP ${DISCOVERY_PORT} | stats port ${port} | will register with UI when it broadcasts`
+    });
   });
 }
 
@@ -214,17 +222,24 @@ export function startPrimaryAnnouncer(primaryTcpHost: string, primaryTcpPort: nu
     // optional
   }
 
-  process.stderr.write(
-    `[discovery] primary: broadcasting connect info ${primaryTcpHost}:${primaryTcpPort} to 255.255.255.255:${PRIMARY_ANNOUNCE_PORT} and 127.0.0.1:${PRIMARY_ANNOUNCE_PORT} every ${PRIMARY_ANNOUNCE_INTERVAL_MS}ms\n`
-  );
+  log.info({
+    msg: `${PREFIX} primary: broadcasting connect info ${primaryTcpHost}:${primaryTcpPort} to 255.255.255.255:${PRIMARY_ANNOUNCE_PORT} every ${PRIMARY_ANNOUNCE_INTERVAL_MS}ms`
+  });
 
   announceInterval = setInterval(() => {
     if (announceSocket == null) return;
     try {
-      s.send(buf, 0, buf.length, PRIMARY_ANNOUNCE_PORT, '255.255.255.255');
       s.send(buf, 0, buf.length, PRIMARY_ANNOUNCE_PORT, '127.0.0.1');
     } catch (err) {
-      process.stderr.write(`[discovery] primary: broadcast send error: ${(err as Error)?.message ?? err}\n`);
+      log.warn({ err, msg: `${PREFIX} primary: loopback announce send error` });
+    }
+    try {
+      s.send(buf, 0, buf.length, PRIMARY_ANNOUNCE_PORT, '255.255.255.255');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENETUNREACH') {
+        log.warn({ err, msg: `${PREFIX} primary: broadcast send error` });
+      }
     }
   }, PRIMARY_ANNOUNCE_INTERVAL_MS);
 }
@@ -251,19 +266,22 @@ export function discoverPrimary(timeoutMs: number): Promise<{ host: string; tcpP
   return new Promise((resolve) => {
     const s = dgram.createSocket('udp4');
     const timer = setTimeout(() => {
-      process.stderr.write(`[discovery] discoverPrimary timeout (${timeoutMs}ms), no broadcast received\n`);
+      log.debug({
+        msg: `${PREFIX} discoverPrimary timeout (${timeoutMs}ms), no broadcast received`
+      });
       s.close();
       resolve(null);
     }, timeoutMs);
 
-    s.on('message', (msg: Buffer) => {
+    const onMessage = (msg: Buffer) => {
       try {
         const raw = msg.toString('utf8').split('\n')[0];
         const obj = JSON.parse(raw) as { primaryTcpHost?: string; primaryTcpPort?: number };
         const host = typeof obj?.primaryTcpHost === 'string' ? obj.primaryTcpHost : null;
         const tcpPort = typeof obj?.primaryTcpPort === 'number' ? obj.primaryTcpPort : null;
         if (host != null && tcpPort != null) {
-          process.stderr.write(`[discovery] received primary announcement: ${host}:${tcpPort}\n`);
+          s.removeListener('message', onMessage);
+          log.info({ msg: `${PREFIX} received primary announcement: ${host}:${tcpPort}` });
           clearTimeout(timer);
           s.close();
           resolve({ host, tcpPort });
@@ -271,16 +289,22 @@ export function discoverPrimary(timeoutMs: number): Promise<{ host: string; tcpP
       } catch {
         // ignore
       }
-    });
+    };
+    s.on('message', onMessage);
     s.on('error', (err: NodeJS.ErrnoException) => {
-      process.stderr.write(`[discovery] discoverPrimary listen error: ${err?.code ?? err?.message ?? err}\n`);
+      log.warn({
+        err,
+        msg: `${PREFIX} discoverPrimary listen error: ${err?.code ?? err?.message ?? err}`
+      });
       clearTimeout(timer);
       s.close();
       resolve(null);
     });
 
     s.bind(PRIMARY_ANNOUNCE_PORT, () => {
-      process.stderr.write(`[discovery] listening for primary announcement on port ${PRIMARY_ANNOUNCE_PORT} (timeout ${timeoutMs}ms)\n`);
+      log.info({
+        msg: `${PREFIX} listening for primary announcement on port ${PRIMARY_ANNOUNCE_PORT} (timeout ${timeoutMs}ms)`
+      });
     });
   });
 }

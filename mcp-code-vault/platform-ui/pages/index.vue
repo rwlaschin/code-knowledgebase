@@ -187,32 +187,53 @@
               <tr v-if="displayRows.length === 0" class="border-b border-white/5">
                 <td colspan="3" class="px-4 py-6 text-center text-gray-500">Logs will populate here as they are received.</td>
               </tr>
-              <tr
-                v-for="(row, i) in displayRows"
-                :key="row.isGroupRow ? `g-${row.groupIndex}` : `r-${i}`"
-                class="border-b border-white/5 hover:bg-white/[0.02] transition-colors"
-              >
-                <td class="relative py-3 pl-10 pr-4">
-                  <button
-                    v-if="row.isGroupRow && row.count != null"
-                    type="button"
-                    class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center p-0 text-[10px] font-medium bg-violet-500/40 text-violet-200 border border-violet-400/30 hover:bg-violet-500/50 transition-colors"
-                    :title="`${row.count} heartbeats (click to expand)`"
-                    :aria-label="`${row.count} heartbeats grouped, click to expand`"
-                    @click="toggleGroupExpanded(row.groupIndex!)"
-                  >
-                    {{ row.count! > 99 ? '99+' : row.count }}
-                  </button>
-                  <span
-                    class="rounded-full pl-1.5 pr-2 py-0.5 text-xs font-medium inline-flex items-center gap-1"
-                    :class="eventBadgeClass(row.event)"
-                  >
-                    {{ row.event }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-gray-400">{{ row.time }}</td>
-                <td class="px-4 py-3 font-mono text-xs truncate max-w-[200px]">{{ row.data }}</td>
-              </tr>
+              <template v-for="row in displayRows" :key="streamDataExpandKey(row)">
+                <tr class="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
+                  <td class="relative py-3 pl-10 pr-4">
+                    <button
+                      v-if="row.isGroupRow && row.count != null"
+                      type="button"
+                      class="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center p-0 text-[10px] font-medium bg-violet-500/40 text-violet-200 border border-violet-400/30 hover:bg-violet-500/50 transition-colors"
+                      :title="`${row.count} heartbeats (click to expand)`"
+                      :aria-label="`${row.count} heartbeats grouped, click to expand`"
+                      @click="toggleGroupExpanded(row.groupIndex!)"
+                    >
+                      {{ row.count! > 99 ? '99+' : row.count }}
+                    </button>
+                    <span
+                      class="rounded-full pl-1.5 pr-2 py-0.5 text-xs font-medium inline-flex items-center gap-1"
+                      :class="eventBadgeClass(row.event)"
+                    >
+                      {{ row.event }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-400">{{ row.time }}</td>
+                  <td class="px-4 py-3 font-mono text-xs max-w-[200px]">
+                    <div class="flex items-center gap-1 min-w-0">
+                      <button
+                        type="button"
+                        class="shrink-0 p-0.5 rounded text-gray-500 hover:text-gray-300"
+                        :aria-expanded="isStreamDataExpanded(streamDataExpandKey(row))"
+                        aria-label="Show full data"
+                        @click.stop="toggleDataRowExpanded(streamDataExpandKey(row))"
+                      >
+                        <Icon
+                          name="lucide:chevron-right"
+                          class="size-4 transition-transform"
+                          :class="{ 'rotate-90': isStreamDataExpanded(streamDataExpandKey(row)) }"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      <span class="truncate min-w-0">{{ row.data }}</span>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="isStreamDataExpanded(streamDataExpandKey(row))" class="border-b border-white/5">
+                  <td colspan="3" class="px-4 py-3 font-mono text-xs">
+                    <pre class="text-xs text-gray-300 whitespace-pre-wrap break-all max-h-48 overflow-auto m-0">{{ formatStreamDataForExpand(row.data) }}</pre>
+                  </td>
+                </tr>
+              </template>
               </tbody>
             </table>
           </div>
@@ -258,6 +279,7 @@
 import { ref, computed, reactive, watch, onMounted, onUnmounted } from 'vue'
 import { useRuntimeConfig } from 'nuxt/app'
 import type { ApexOptions } from 'apexcharts'
+import { usePrimaryBaseUrl } from '../composables/usePrimaryBaseUrl'
 
 /** Socket type from dynamic import (client-only). */
 interface SocketLike {
@@ -266,6 +288,7 @@ interface SocketLike {
 }
 
 const { public: publicConfig } = useRuntimeConfig()
+const primaryBaseUrl = usePrimaryBaseUrl()
 /** Backend base URL for Socket.IO only. When useStatsProxy, same-origin so proxy handles /socket.io. */
 const statsBase = computed(() => {
   if (typeof window === 'undefined') return ''
@@ -306,13 +329,23 @@ const backendPortForCopy = computed(() => {
 
 const streamStatus = ref<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected')
 const streamEventTime = ref('')
+/** Server we're currently connected to (for deregister on disconnect). */
+const currentStreamServer = ref<{ projectName: string; port: number } | null>(null)
 /** Raw stream events (newest first); pushStreamEvent appends here. */
-const streamEventsRaw = ref<{ event: string; time: string; data: string }[]>([])
+const streamEventsRaw = ref<{ id: string; event: string; time: string; data: string }[]>([])
+let nextStreamEventId = 0
 /** Grouped rows: consecutive heartbeats as one row with count + newest time/data; rawEvents for expand. */
 const streamEventRows = computed(() => {
   const raw = streamEventsRaw.value
   if (raw.length === 0) return []
-  type Row = { event: string; time: string; data: string; count?: number; rawEvents?: { time: string; data: string }[] }
+  type Row = {
+    id: string
+    event: string
+    time: string
+    data: string
+    count?: number
+    rawEvents?: { id: string; time: string; data: string }[]
+  }
   const out: Row[] = []
   let i = 0
   while (i < raw.length) {
@@ -321,9 +354,9 @@ const streamEventRows = computed(() => {
       i += 1
       continue
     }
-    const group: { time: string; data: string }[] = []
+    const group: { id: string; time: string; data: string }[] = []
     while (i < raw.length && raw[i].event === 'heartbeat') {
-      group.push({ time: raw[i].time, data: raw[i].data })
+      group.push({ id: raw[i].id, time: raw[i].time, data: raw[i].data })
       i += 1
     }
     // raw is newest-first, so group[0] is the newest heartbeat
@@ -332,6 +365,7 @@ const streamEventRows = computed(() => {
       event: 'heartbeat',
       time: newest.time,
       data: newest.data,
+      id: newest.id,
       ...(group.length > 1 ? { count: group.length, rawEvents: group } : {})
     })
   }
@@ -341,15 +375,56 @@ const streamEventRows = computed(() => {
 /** Which grouped rows are expanded (show individual heartbeats). Set of row index in streamEventRows. */
 const expandedGroupIndices = ref<Set<number>>(new Set())
 
+/** Data accordion keys. Heartbeat summary uses stream:hb-group:N (stable); row.rowId is newest se-* and changes every beat. */
+const expandedDataRowKeys = ref<string[]>([])
+
+type DisplayStreamRow = {
+  rowId: string
+  event: string
+  time: string
+  data: string
+  count?: number
+  groupIndex?: number
+  isGroupRow?: boolean
+  rawEvents?: { id: string; time: string; data: string }[]
+  hbSlotKey?: number
+}
+
+function streamDataExpandKey(row: DisplayStreamRow): string {
+  if (row.isGroupRow && row.count != null && row.groupIndex !== undefined)
+    return `stream:hb-group:${row.groupIndex}`
+  if (row.hbSlotKey !== undefined) return `stream:hb-group:${row.hbSlotKey}`
+  return row.rowId
+}
+
+function isStreamDataExpanded(key: string): boolean {
+  return expandedDataRowKeys.value.includes(key)
+}
+
+function toggleDataRowExpanded(expandKey: string) {
+  const cur = expandedDataRowKeys.value
+  const i = cur.indexOf(expandKey)
+  expandedDataRowKeys.value = i >= 0 ? cur.filter((k) => k !== expandKey) : [...cur, expandKey]
+}
+
+function formatStreamDataForExpand(data: string): string {
+  try {
+    return JSON.stringify(JSON.parse(data), null, 2)
+  } catch {
+    return data
+  }
+}
+
 /** Flattened rows for table: expanded groups show a clickable group row (stays visible) then individual rows; click group row to collapse. */
 const displayRows = computed(() => {
   const rows = streamEventRows.value
   const expanded = expandedGroupIndices.value
-  const out: { event: string; time: string; data: string; count?: number; groupIndex?: number; isGroupRow?: boolean; rawEvents?: { time: string; data: string }[] }[] = []
+  const out: DisplayStreamRow[] = []
   rows.forEach((row, idx) => {
     if (row.count != null && row.rawEvents && expanded.has(idx)) {
       const [first, ...rest] = row.rawEvents
       out.push({
+        rowId: first.id,
         event: 'heartbeat',
         time: first.time,
         data: first.data,
@@ -358,10 +433,15 @@ const displayRows = computed(() => {
         count: row.count,
         rawEvents: row.rawEvents
       })
-      rest.forEach((re) => out.push({ event: 'heartbeat', time: re.time, data: re.data }))
+      rest.forEach((re) =>
+        out.push({ rowId: re.id, event: 'heartbeat', time: re.time, data: re.data })
+      )
     } else {
+      const hbSlotKey = row.event === 'heartbeat' && row.count == null ? idx : undefined
       out.push({
         ...row,
+        rowId: row.id,
+        ...(hbSlotKey !== undefined ? { hbSlotKey } : {}),
         ...(row.count != null ? { groupIndex: idx, isGroupRow: true, rawEvents: row.rawEvents } : {})
       })
     }
@@ -378,7 +458,7 @@ function toggleGroupExpanded(groupIndex: number) {
 
 /** Browser logs visible on the page (same as console [stream] messages). */
 const streamBrowserLogs = ref('')
-/** Only show Connected after we get a heartbeat (proves backend stream is alive). */
+/** Stream alive: first server `connected` event or heartbeat (backend emits both right after join). */
 const hasReceivedHeartbeat = ref(false)
 /** Only show the stream error banner after we've actually had a connect_error or disconnect (not on first paint). */
 const hasStreamErrorOccurred = ref(false)
@@ -388,16 +468,29 @@ const primaryPortFromStream = ref<number | null>(null)
 /** Secondaries from stream (secondary:connected); shown in Registered MCPs with Secondary style. */
 const secondariesFromStream = ref<{ port: number; projectName: string }[]>([])
 let discoveryPollTimer: ReturnType<typeof setInterval> | null = null
+/** Consecutive empty /api/servers responses; avoid replacing a non-empty list with a single spurious empty. */
+let consecutiveEmptyDiscoveryResponses = 0
 
 async function fetchDiscoveryServers() {
   try {
     const r = await fetch('/api/servers')
     if (r.ok) {
       const { servers } = (await r.json()) as { servers?: { projectName: string; port: number }[] }
-      discoveryServers.value = servers ?? []
+      const list = servers ?? []
+      if (list.length > 0) {
+        consecutiveEmptyDiscoveryResponses = 0
+        discoveryServers.value = list
+      } else {
+        consecutiveEmptyDiscoveryResponses += 1
+        // Only replace with empty after 2 consecutive empty responses so one blip (e.g. during a new MCP registering) doesn't clear the UI
+        if (consecutiveEmptyDiscoveryResponses >= 2 || discoveryServers.value.length === 0) {
+          discoveryServers.value = list
+        }
+      }
     }
+    // On non-ok response, keep current list; do not clear — we didn't lose communication with existing MCPs
   } catch {
-    discoveryServers.value = []
+    // On network error, keep current list; do not clear — e.g. server busy handling a new registration must not wipe the UI
   }
 }
 
@@ -620,14 +713,17 @@ function eventBadgeClass(event: string): string {
 function pushStreamEvent(data: string, eventType: string) {
   const time = new Date().toLocaleString()
   streamEventTime.value = time
-  const next = [{ event: eventType, time, data: data.slice(0, 120) }, ...streamEventsRaw.value]
+  const id = `se-${++nextStreamEventId}`
+  const next = [{ id, event: eventType, time, data }, ...streamEventsRaw.value]
   streamEventsRaw.value = next.slice(0, STREAM_EVENT_CAP)
 }
 
 async function fetchInitialMetrics() {
   metricsLoading.value = true
+  const baseUrl = streamTargetUrl.value || (publicConfig.useStatsProxy ? '' : statsBase.value)
+  const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/metrics?limit=500` : '/metrics?limit=500'
   try {
-    const res = await fetch('/metrics?limit=500')
+    const res = await fetch(url)
     if (res.ok) {
       const { metrics } = await res.json()
       const list = (metrics ?? []).map((m: { _id?: string; started_at: string; ended_at: string; [k: string]: unknown }) => ({
@@ -665,9 +761,22 @@ function onMetric(data: string) {
 }
 
 let socket: SocketLike | null = null
-/** Backend sends heartbeat every 5s; if we get nothing for 15s, connection is dead. */
-const STREAM_DEAD_MS = 15_000
+/** Bumps on each connectStream() so overlapping calls (watch + onMounted) cannot each create a Socket.IO client — orphaned clients would double heartbeats in the log. */
+let connectStreamGeneration = 0
+/** Backend sends heartbeat every 5s; if we get nothing for this long, treat connection as dead so UI updates (e.g. after server Ctrl-C). */
+const STREAM_DEAD_MS = 6_000
+/** Debounce before showing Disconnected after a disconnect event so flaky connections don't flip/flop. */
+// Unit tests assert immediate UI state changes on disconnect; in test mode we disable debounce.
+const DISCONNECT_DEBOUNCE_MS = process.env.NODE_ENV === 'test' ? 0 : 4_000
 let streamDeadTimer: ReturnType<typeof setTimeout> | null = null
+let disconnectDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearDisconnectDebounce() {
+  if (disconnectDebounceTimer) {
+    clearTimeout(disconnectDebounceTimer)
+    disconnectDebounceTimer = null
+  }
+}
 
 function scheduleStreamDeadCheck() {
   if (streamDeadTimer) clearTimeout(streamDeadTimer)
@@ -687,45 +796,104 @@ function onStreamEvent() {
 }
 
 async function connectStream(baseUrl: string) {
+  const gen = ++connectStreamGeneration
   if (socket) {
     socket.disconnect()
     socket = null
   }
   const base = baseUrl ? baseUrl.replace(/\/$/, '') : ''
+  // Make this available to other pages (config/scan) for HTTP requests.
+  primaryBaseUrl.value = base || ''
+  const servers = discoveryServers.value
+  const first = servers.length > 0 ? servers[0] : null
+  if (first && base) {
+    try {
+      const u = new URL(base)
+      if (u.port === String(first.port)) currentStreamServer.value = { projectName: first.projectName, port: first.port }
+      else currentStreamServer.value = null
+    } catch {
+      currentStreamServer.value = null
+    }
+  } else {
+    currentStreamServer.value = null
+  }
   streamStatus.value = 'connecting'
   hasReceivedHeartbeat.value = false
+  clearDisconnectDebounce()
   const { io } = await import('socket.io-client')
+  if (gen !== connectStreamGeneration) return
   addStreamLog(`Socket.IO connecting to ${base || window.location.origin}`)
   socket = io(base || undefined, { autoConnect: true, reconnection: true })
   socket.on('connect', () => {
     addStreamLog('Socket.IO connect')
+    clearDisconnectDebounce()
     streamStatus.value = 'connecting'
   })
-  socket.on('connect_error', (...args: unknown[]) => {
+  async function onStreamDisconnect() {
+    const server = currentStreamServer.value
+    currentStreamServer.value = null
+    if (server) {
+      try {
+        await fetch('/api/servers/deregister', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(server) })
+      } catch {
+        // ignore
+      }
+      await fetchDiscoveryServers()
+      const nextUrl = streamTargetUrl.value
+      if (nextUrl) setTimeout(() => { if (streamTargetUrl.value) connectStream(streamTargetUrl.value) }, 1000)
+    }
+  }
+  socket.on('connect_error', async (...args: unknown[]) => {
     const err = args[0] as Error
     hasStreamErrorOccurred.value = true
     addStreamLog(`Socket.IO connect_error: ${err?.message ?? String(args)}. ${base ? `Is the backend running on ${base}?` : 'Is the stats server running? (STATS_PORT)'}`)
     streamStatus.value = 'error'
     hasReceivedHeartbeat.value = false
+    await onStreamDisconnect()
   })
-  socket.on('disconnect', (...args: unknown[]) => {
+  socket.on('disconnect', async (...args: unknown[]) => {
     const reason = (args[0] as string) ?? 'unknown'
     hasStreamErrorOccurred.value = true
     addStreamLog(`Socket.IO disconnect: ${reason}`)
     if (streamDeadTimer) clearTimeout(streamDeadTimer)
     streamDeadTimer = null
-    streamStatus.value = 'error'
     hasReceivedHeartbeat.value = false
+    // Clear primary so pages don't make HTTP requests against a dead primary.
+    primaryBaseUrl.value = ''
+    if (disconnectDebounceTimer) return
+    const runDisconnect = async () => {
+      disconnectDebounceTimer = null
+      if (streamStatus.value === 'connected' || streamStatus.value === 'connecting') {
+        streamStatus.value = 'error'
+        await onStreamDisconnect()
+      }
+    }
+
+    if (DISCONNECT_DEBOUNCE_MS === 0) {
+      await runDisconnect()
+      return
+    }
+
+    disconnectDebounceTimer = setTimeout(runDisconnect, DISCONNECT_DEBOUNCE_MS)
   })
   socket.on('connected', (data: unknown) => {
     const str = typeof data === 'string' ? data : JSON.stringify(data)
     addStreamLog(`event=connected ${str.slice(0, 80)}`)
     pushStreamEvent(str, 'connected')
     fetchInitialMetrics()
+    // Same proof of life as first heartbeat: backend emits this immediately after join (see src/index.ts).
+    // Relying only on heartbeat left the badge stuck on "Waiting…" after reload if the first heartbeat was missed.
+    if (!hasReceivedHeartbeat.value) {
+      hasReceivedHeartbeat.value = true
+      clearDisconnectDebounce()
+      streamStatus.value = 'connected'
+      scheduleStreamDeadCheck()
+    }
   })
   socket.on('heartbeat', (data: unknown) => {
     if (!hasReceivedHeartbeat.value) {
       hasReceivedHeartbeat.value = true
+      clearDisconnectDebounce()
       streamStatus.value = 'connected'
       scheduleStreamDeadCheck()
     } else {
@@ -738,7 +906,14 @@ async function connectStream(baseUrl: string) {
     onStreamEvent()
     const str = typeof data === 'string' ? data : JSON.stringify(data)
     addStreamLog(`event=metric ${str.slice(0, 80)}`)
-    pushStreamEvent(str, 'metric')
+    let eventLabel = 'metric'
+    try {
+      const m = JSON.parse(str) as { operation?: string }
+      if (typeof m.operation === 'string' && m.operation.trim()) eventLabel = m.operation
+    } catch {
+      // keep 'metric'
+    }
+    pushStreamEvent(str, eventLabel)
     onMetric(str)
   })
   socket.on('primary:identified', (data: unknown) => {
@@ -809,11 +984,32 @@ async function connectStream(baseUrl: string) {
       // ignore
     }
   })
+  socket.on('db:connected', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=db:connected ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'DB connected')
+  })
+  socket.on('seed:checked', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=seed:checked ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Seed checked')
+  })
+  socket.on('project', (data: unknown) => {
+    onStreamEvent()
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    addStreamLog(`event=project ${str.slice(0, 80)}`)
+    pushStreamEvent(str, 'Project ensured')
+  })
 }
 
 onMounted(async () => {
   await fetchDiscoveryServers()
   discoveryPollTimer = setInterval(fetchDiscoveryServers, 5000)
+
+  // Load persisted metrics from DB on mount so reload shows saved queries/events
+  await fetchInitialMetrics()
 
   const baseUrl = streamTargetUrl.value
   if (!baseUrl && !publicConfig.useStatsProxy) {
@@ -827,6 +1023,20 @@ onMounted(async () => {
 })
 
 watch(discoveryServers, (servers, prev) => {
+  if (servers.length === 0 && prev && prev.length > 0) {
+    // No servers registered anymore (all stopped or pruned) — disconnect so status matches reality
+    if (socket) {
+      socket.disconnect()
+      socket = null
+    }
+    currentStreamServer.value = null
+    streamStatus.value = 'disconnected'
+    hasReceivedHeartbeat.value = false
+    clearDisconnectDebounce()
+    if (streamDeadTimer) clearTimeout(streamDeadTimer)
+    streamDeadTimer = null
+    return
+  }
   if (prev?.length === 0 && servers.length > 0 && (streamStatus.value === 'error' || streamStatus.value === 'disconnected')) {
     const url = streamTargetUrl.value
     if (url) connectStream(url)
@@ -834,8 +1044,10 @@ watch(discoveryServers, (servers, prev) => {
 }, { deep: true })
 
 async function fetchScanProgress() {
+  const baseUrl = streamTargetUrl.value || (publicConfig.useStatsProxy ? '' : statsBase.value)
+  const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/scan/progress` : '/scan/progress'
   try {
-    const res = await fetch('/scan/progress')
+    const res = await fetch(url)
     if (res.ok) {
       const payload = (await res.json()) as { filesProcessed?: number; filesUpdated?: number }
       if (typeof payload.filesProcessed === 'number') scanFilesProcessed.value = payload.filesProcessed
@@ -851,6 +1063,7 @@ onUnmounted(() => {
   discoveryPollTimer = null
   if (streamDeadTimer) clearTimeout(streamDeadTimer)
   streamDeadTimer = null
+  clearDisconnectDebounce()
   if (socket) socket.disconnect()
   socket = null
 })

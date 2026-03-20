@@ -4,6 +4,7 @@
  */
 
 import type { Server as SocketIOServer } from 'socket.io';
+import { getProcessProjectKey } from '../projectKey';
 import { writeProcessLog } from '../stdioMode';
 
 type StreamMessage = { event: string; data: string };
@@ -27,7 +28,7 @@ export function getStreamRole(): 'primary' | 'client' | null {
 
 /** Push a metric (or any event) to the stream. Every connected client receives it. */
 export function pushToStream(event: string, data: string): void {
-  writeProcessLog(`[BACKEND] pushing message to client event=${event} ${data.slice(0, 60)}...\n`);
+  writeProcessLog(`[MCP] pushing message to client event=${event} ${data.slice(0, 60)}...\n`);
   const msg: StreamMessage = { event, data };
   if (io) io.emit(event, data);
   const subs = Array.from(subscribers);
@@ -52,17 +53,40 @@ function waitNext(timeoutMs: number): Promise<StreamMessage | null> {
 
 const HEARTBEAT_MS = 5000;
 
+/** Live stream liveness payload (Socket.IO + SSE). Always includes projectKey (e.g. `'default'` when env unset). */
+export function buildStreamHeartbeatPayload(
+  statsPort: number,
+  ts: string = new Date().toISOString()
+): { ts: string; port: number; projectKey: string } {
+  const p = Number(statsPort);
+  return {
+    ts,
+    port: Number.isFinite(p) ? p : 0,
+    projectKey: getProcessProjectKey()
+  };
+}
+
+function sseStreamJson(ts: string): string {
+  const raw = process.env.PORT;
+  const portGuess = raw !== undefined && raw !== '' ? Number(raw) : 0;
+  return JSON.stringify(buildStreamHeartbeatPayload(portGuess, ts));
+}
+
 /** Async generator for SSE (tests / legacy): connected, immediate heartbeat, then metric or heartbeat. */
 export async function* streamToUI(): AsyncGenerator<StreamMessage> {
-  yield { event: 'connected', data: JSON.stringify({ ts: new Date().toISOString() }) };
-  yield { event: 'heartbeat', data: JSON.stringify({ ts: new Date().toISOString() }) };
+  const ts0 = new Date().toISOString();
+  yield { event: 'connected', data: sseStreamJson(ts0) };
+  yield { event: 'heartbeat', data: sseStreamJson(new Date().toISOString()) };
   while (true) {
     const msg = await waitNext(HEARTBEAT_MS);
     if (msg) {
       yield msg;
     } else {
-      writeProcessLog(`[BACKEND] sending heartbeat to client\n`);
-      yield { event: 'heartbeat', data: JSON.stringify({ ts: new Date().toISOString() }) };
+      writeProcessLog(`[MCP] sending heartbeat to client\n`);
+      yield {
+        event: 'heartbeat',
+        data: sseStreamJson(new Date().toISOString())
+      };
     }
   }
 }

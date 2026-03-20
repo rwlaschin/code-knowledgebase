@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { Metric } from '../../db/models/Metric';
+import { Metric, type IMetric } from '../../db/models/Metric';
 import { writeProcessLog } from '../../stdioMode';
 import { pushToStream } from '../streamChannel';
+import { normalizeMetricPayload, ensureMetadataProjectKeyForRead } from '../normalizeMetric';
 
 const metricBodySchema = {
   type: 'object',
@@ -37,15 +38,24 @@ export async function metricRoutes(fastify: FastifyInstance) {
     schema: { body: metricBodySchema }
   }, async (request, reply) => {
     const { role, ...body } = request.body as typeof request.body & { role?: 'primary' | 'client' };
-    writeProcessLog(`[BACKEND] POST /metrics received operation=${body.operation} kind=${body.kind} instance_id=${body.instance_id}\n`);
-    const doc = await Metric.create({
-      ...body,
-      started_at: new Date(body.started_at),
-      ended_at: new Date(body.ended_at)
-    });
-    writeProcessLog(`[BACKEND] pushing message to mongo _id=${(doc as { _id?: unknown })._id} operation=${body.operation}\n`);
+    const normalized = normalizeMetricPayload(body);
+    writeProcessLog(`[MCP] POST /metrics received operation=${normalized.operation} kind=${normalized.kind} instance_id=${normalized.instance_id}\n`);
+    let doc: IMetric;
+    try {
+      const created = await Metric.create({
+        ...normalized,
+        started_at: new Date(normalized.started_at),
+        ended_at: new Date(normalized.ended_at)
+      });
+      doc = Array.isArray(created) ? created[0] : created;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      writeProcessLog(`[MCP] POST /metrics Mongo save failed: ${msg}\n`);
+      return reply.status(500).send({ ok: false, error: 'Failed to save metric to database' });
+    }
+    writeProcessLog(`[MCP] metric saved to Mongo _id=${doc._id} operation=${normalized.operation}\n`);
     const payload = {
-      _id: (doc as { _id?: unknown })._id?.toString?.() ?? (doc as { id?: string }).id,
+      _id: doc._id?.toString?.() ?? (doc as { id?: string }).id,
       instance_id: doc.instance_id,
       operation: doc.operation,
       kind: doc.kind,
@@ -54,7 +64,7 @@ export async function metricRoutes(fastify: FastifyInstance) {
       duration_ms: doc.duration_ms,
       status: doc.status,
       error_code: doc.error_code,
-      metadata: doc.metadata,
+      metadata: doc.metadata ?? {},
       ...(role ? { role } : {})
     };
     pushToStream('metric', JSON.stringify(payload));
@@ -71,18 +81,21 @@ export async function metricRoutes(fastify: FastifyInstance) {
     if (query.since) filter.started_at = { $gte: new Date(query.since) };
     const limit = Math.min(Math.max(parseInt(query.limit ?? '500', 10), 1), 1000);
     const docs = await Metric.find(filter).sort({ started_at: -1 }).limit(limit).lean();
-    const metrics = docs.map((d) => ({
-      _id: (d as { _id?: unknown })._id?.toString?.() ?? (d as { id?: string }).id,
-      instance_id: (d as { instance_id: string }).instance_id,
-      operation: (d as { operation: string }).operation,
-      kind: (d as { kind?: string }).kind ?? 'event',
-      started_at: (d as { started_at: Date }).started_at?.toISOString?.() ?? new Date((d as { started_at: string }).started_at).toISOString(),
-      ended_at: (d as { ended_at: Date }).ended_at?.toISOString?.() ?? new Date((d as { ended_at: string }).ended_at).toISOString(),
-      duration_ms: (d as { duration_ms: number }).duration_ms,
-      status: (d as { status: string }).status,
-      error_code: (d as { error_code?: string }).error_code,
-      metadata: (d as { metadata?: Record<string, unknown> }).metadata
-    }));
+    const metrics = docs.map((d) => {
+      const meta = (d as { metadata?: Record<string, unknown> }).metadata;
+      return {
+        _id: (d as { _id?: unknown })._id?.toString?.() ?? (d as { id?: string }).id,
+        instance_id: (d as { instance_id: string }).instance_id,
+        operation: (d as { operation: string }).operation,
+        kind: (d as { kind?: string }).kind ?? 'event',
+        started_at: (d as { started_at: Date }).started_at?.toISOString?.() ?? new Date((d as { started_at: string }).started_at).toISOString(),
+        ended_at: (d as { ended_at: Date }).ended_at?.toISOString?.() ?? new Date((d as { ended_at: string }).ended_at).toISOString(),
+        duration_ms: (d as { duration_ms: number }).duration_ms,
+        status: (d as { status: string }).status,
+        error_code: (d as { error_code?: string }).error_code,
+        metadata: ensureMetadataProjectKeyForRead(meta && typeof meta === 'object' ? meta : {})
+      };
+    });
     return reply.send({ metrics });
   });
 }

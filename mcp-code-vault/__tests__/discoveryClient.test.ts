@@ -48,6 +48,16 @@ jest.mock('https', () => ({
   request: (...args: unknown[]) => mockHttpRequest(...args)
 }));
 
+jest.mock('@/logger', () => {
+  const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+  (global as { __discoveryMockLog?: typeof log }).__discoveryMockLog = log;
+  return { logger: { child: () => log } };
+});
+
+function getMockLog(): { info: jest.Mock; warn: jest.Mock; error: jest.Mock; debug: jest.Mock } {
+  return (global as unknown as { __discoveryMockLog: { info: jest.Mock; warn: jest.Mock; error: jest.Mock; debug: jest.Mock } }).__discoveryMockLog;
+}
+
 function getMessageHandler(): (msg: Buffer) => void {
   return handlers['message'] as (msg: Buffer) => void;
 }
@@ -99,7 +109,7 @@ describe('discoveryClient', () => {
       expect(dgram.createSocket).toHaveBeenCalledTimes(1);
     });
 
-    it('when message with valid registerUrl is received, POSTs port only', () => {
+    it('when message with valid registerUrl is received, POSTs port and projectName', () => {
       startDiscoveryClient(3100);
       const onMessage = getMessageHandler();
       expect(onMessage).toBeDefined();
@@ -135,7 +145,7 @@ describe('discoveryClient', () => {
       const opts = mockHttpRequest.mock.calls[0][0] as http.RequestOptions;
       expect(Number(opts.port)).toBe(2999);
       expect(writtenBody).toHaveLength(1);
-      expect(JSON.parse(writtenBody[0])).toEqual({ port: 3100 });
+      expect(JSON.parse(writtenBody[0])).toEqual({ port: 3100, projectName: 'mcp-3100' });
     });
 
     it('ignores message without registerUrl', () => {
@@ -147,24 +157,20 @@ describe('discoveryClient', () => {
       expect(mockHttpRequest).not.toHaveBeenCalled();
     });
 
-    it('error handler logs EADDRINUSE as warn', () => {
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    it('error handler logs EADDRINUSE as info', () => {
       startDiscoveryClient(MOCK_STATS_PORT);
       const onError = getErrorHandler();
       const err = new Error('bind EADDRINUSE') as NodeJS.ErrnoException;
       err.code = 'EADDRINUSE';
       onError(err);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('9255'));
-      warn.mockRestore();
+      expect(getMockLog().info).toHaveBeenCalledWith(expect.objectContaining({ msg: expect.stringContaining('9255') }));
     });
 
-    it('error handler logs other errors to console.error', () => {
-      const errLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    it('error handler logs other errors via logger', () => {
       startDiscoveryClient(MOCK_STATS_PORT);
       const onError = getErrorHandler();
       onError(new Error('other') as NodeJS.ErrnoException);
-      expect(errLog).toHaveBeenCalled();
-      errLog.mockRestore();
+      expect(getMockLog().error).toHaveBeenCalled();
     });
   });
 

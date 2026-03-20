@@ -70,7 +70,7 @@ describe('Docs page', () => {
     const wrapper = await mountDocs();
     const text = wrapper.text();
     expect(text).toContain('Quick start');
-    expect(text).toContain('Setting up the MCP server in Cursor');
+    expect(text).toContain('Setting up MCP server');
     expect(text).toContain('Platform UI');
     expect(text).toContain('mcpServers');
     expect(text).toContain('pong');
@@ -94,7 +94,7 @@ describe('Docs page', () => {
   it('MCP snippet structure matches snapshot', async () => {
     const wrapper = await mountDocs();
     const snippet = wrapper.find('pre code').text();
-    const normalized = snippet.replace(mockCwd, '<project-root>');
+    const normalized = snippet.split(mockCwd).join('<project-root>');
     expect(normalized).toMatchInlineSnapshot(`
       "{
         "mcpServers": {
@@ -104,7 +104,8 @@ describe('Docs page', () => {
             "cwd": "<project-root>",
             "env": {
               "PORT": "3000",
-              "MCP_PROJECT_NAME": "my-project"
+              "MCP_PROJECT_NAME": "my-project",
+              "WORKING_DIRECTORY": "<project-root>"
             }
           }
         }

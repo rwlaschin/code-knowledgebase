@@ -54,6 +54,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRuntimeConfig } from 'nuxt/app'
+import { usePrimaryBaseUrl } from '../composables/usePrimaryBaseUrl'
 
 export interface ProjectItem {
   key: string
@@ -99,11 +100,21 @@ interface SocketLike {
   disconnect(): void
 }
 let socket: SocketLike | null = null
+let projectsRefreshInFlight = false
+const primaryBaseUrl = usePrimaryBaseUrl()
 
 async function fetchProjects() {
+  if (projectsRefreshInFlight) return
+  projectsRefreshInFlight = true
   projectsLoading.value = true
+  const base = primaryBaseUrl.value || statsBase.value
+  if (!base) {
+    projectsLoading.value = false
+    projectsRefreshInFlight = false
+    return
+  }
   try {
-    const res = await fetch('/projects')
+    const res = await fetch(`${base}/projects`)
     if (res.ok) {
       const { projects: list } = await res.json()
       projects.value = list ?? []
@@ -112,14 +123,17 @@ async function fetchProjects() {
     }
   } finally {
     projectsLoading.value = false
+    projectsRefreshInFlight = false
   }
 }
 
 async function fetchScanProgress() {
   const key = selectedProjectKey.value
   if (!key) return
+  const base = primaryBaseUrl.value || statsBase.value
+  if (!base) return
   try {
-    const res = await fetch(`/scan/progress?projectKey=${encodeURIComponent(key)}`)
+    const res = await fetch(`${base}/scan/progress?projectKey=${encodeURIComponent(key)}`)
     if (res.ok) {
       const payload = await res.json()
       scanProgress.value = payload
@@ -153,6 +167,15 @@ onMounted(async () => {
   if (base || publicConfig.useStatsProxy) {
     const { io } = await import('socket.io-client')
     socket = io(base || undefined, { autoConnect: true, reconnection: true })
+    primaryBaseUrl.value = base || ''
+    socket.on('connect', () => {
+      // If MCP created/updated projects after this page mounted, refresh the selector now.
+      fetchProjects()
+    })
+    socket.on('project', () => {
+      // Project init is the moment a new project can appear in `/projects`.
+      fetchProjects()
+    })
     socket.on('scan:progress', onScanProgress)
   }
 })

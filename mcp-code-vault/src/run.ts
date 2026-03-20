@@ -4,7 +4,7 @@
  */
 function onFatal(err: unknown): void {
   const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
-  process.stderr.write('[backend] FATAL: ' + msg + '\n');
+  process.stderr.write('[mcp] FATAL: ' + msg + '\n');
   process.exit(1);
 }
 

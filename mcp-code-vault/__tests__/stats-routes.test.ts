@@ -52,6 +52,11 @@ describe('Stats routes', () => {
       expect(data.ts).toBeDefined();
       expect(typeof data.ts).toBe('string');
       expect(new Date(data.ts).toISOString()).toBe(data.ts);
+      const { getProcessProjectKey } = await import('../src/projectKey');
+      expect(data.projectKey).toBe(getProcessProjectKey());
+      expect(data.port).toBe(
+        process.env.PORT !== undefined && process.env.PORT !== '' ? Number(process.env.PORT) : 0
+      );
     });
 
     it('stream yields heartbeat immediately after connected', async () => {
@@ -64,6 +69,8 @@ describe('Stats routes', () => {
       const data = JSON.parse(second.value!.data);
       expect(data.ts).toBeDefined();
       expect(new Date(data.ts).toISOString()).toBe(data.ts);
+      const { getProcessProjectKey: gpk2 } = await import('../src/projectKey');
+      expect(data.projectKey).toBe(gpk2());
     });
 
     it('stream yields heartbeat after delay', async () => {
@@ -81,6 +88,8 @@ describe('Stats routes', () => {
       const data = JSON.parse(third.value!.data);
       expect(data.ts).toBeDefined();
       expect(new Date(data.ts).toISOString()).toBe(data.ts);
+      const { getProcessProjectKey: gpk3 } = await import('../src/projectKey');
+      expect(data.projectKey).toBe(gpk3());
     });
 
     it('pushToStream broadcasts to all connected clients', async () => {

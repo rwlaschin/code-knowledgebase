@@ -9,15 +9,10 @@ jest.mock('../src/scannerRequirements', () => ({
   getProjectRoot: jest.fn()
 }));
 jest.mock('../src/db/projectDb', () => ({
-  ensureProjectCollections: jest.fn().mockResolvedValue(undefined),
-  hasAnyPaths: jest.fn(),
-  getOrCreateBranch: jest.fn().mockResolvedValue(undefined)
+  ensureProjectCollections: jest.fn().mockResolvedValue(undefined)
 }));
 
-const mockGetProjectRoot = jest.requireMock('../src/scannerRequirements').getProjectRoot as jest.Mock;
 const mockEnsureProjectCollections = jest.requireMock('../src/db/projectDb').ensureProjectCollections as jest.Mock;
-const mockHasAnyPaths = jest.requireMock('../src/db/projectDb').hasAnyPaths as jest.Mock;
-const mockGetOrCreateBranch = jest.requireMock('../src/db/projectDb').getOrCreateBranch as jest.Mock;
 
 describe('projectDefaults', () => {
   beforeEach(() => {
@@ -49,29 +44,10 @@ describe('projectDefaults', () => {
   });
 
   describe('ensureProjectDefaults', () => {
-    it('calls ensureProjectCollections and returns early when hasAnyPaths is true', async () => {
-      mockHasAnyPaths.mockResolvedValue(true);
-      mockGetProjectRoot.mockResolvedValue('/root');
-
+    it('calls ensureProjectCollections with projectKey', async () => {
       await ensureProjectDefaults('my-key');
 
       expect(mockEnsureProjectCollections).toHaveBeenCalledWith('my-key');
-      expect(mockHasAnyPaths).toHaveBeenCalledWith('my-key');
-      expect(mockGetProjectRoot).not.toHaveBeenCalled();
-      expect(mockGetOrCreateBranch).not.toHaveBeenCalled();
-    });
-
-    it('reads branch from root and calls getOrCreateBranch when NEW (no paths)', async () => {
-      mockHasAnyPaths.mockResolvedValue(false);
-      mockGetProjectRoot.mockResolvedValue('/proj/root');
-      (fs.readFileSync as jest.Mock).mockReturnValue('ref: refs/heads/main\n');
-
-      await ensureProjectDefaults('my-key');
-
-      expect(mockEnsureProjectCollections).toHaveBeenCalledWith('my-key');
-      expect(mockHasAnyPaths).toHaveBeenCalledWith('my-key');
-      expect(mockGetProjectRoot).toHaveBeenCalledWith('my-key');
-      expect(mockGetOrCreateBranch).toHaveBeenCalledWith('my-key', 'main');
     });
   });
 });

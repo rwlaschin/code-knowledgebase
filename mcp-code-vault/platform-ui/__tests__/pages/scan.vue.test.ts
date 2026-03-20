@@ -123,4 +123,36 @@ describe('Scan page', () => {
     await wrapper.vm.$nextTick();
     expect(select.exists()).toBe(true);
   });
+
+  it('refetches projects when project event is received', async () => {
+    mockFetch
+      // initial fetchProjects()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ projects: [] })
+      })
+      // initial fetchScanProgress() (not called because no selectedProjectKey)
+      // project refresh from socket event
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            projects: [{ key: 'default', name: 'Default Project' }]
+          })
+      })
+
+    const wrapper = mount(Scan, {
+      global: globalMount
+    })
+
+    await flushPromises()
+    const projectInitCb = mockSocketHandlers['project']
+    expect(projectInitCb).toBeDefined()
+
+    projectInitCb!(JSON.stringify({ projectKey: 'default', action: 'created' }))
+    await wrapper.vm.$nextTick()
+
+    // After refresh, selector should list the new project.
+    expect(wrapper.text()).toContain('Default Project')
+  })
 });

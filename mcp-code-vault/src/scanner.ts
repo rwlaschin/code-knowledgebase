@@ -46,6 +46,13 @@ function walkDir(
   return results;
 }
 
+/** List all file paths under root using the same ignore rules as the scanner. */
+export function listFilesUnderRoot(root: string): string[] {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  return walkDir(root, fs, path);
+}
+
 /** Resolve project root. One DB call. */
 async function getProjectRoot(projectKey: string): Promise<string> {
   const { connectToDatabase } = await import('./db');
